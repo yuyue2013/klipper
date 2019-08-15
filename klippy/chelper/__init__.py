@@ -50,7 +50,7 @@ defs_itersolve = """
         , double accel_t, double cruise_t, double decel_t
         , double start_pos_x, double start_pos_y, double start_pos_z
         , double axes_d_x, double axes_d_y, double axes_d_z
-        , double start_v, double cruise_v, double accel);
+        , double start_v, double cruise_v, double accel, double decel);
     int32_t itersolve_gen_steps(struct stepper_kinematics *sk, struct move *m);
     void itersolve_set_stepcompress(struct stepper_kinematics *sk
         , struct stepcompress *sc, double step_dist);
@@ -86,7 +86,7 @@ defs_kin_extruder = """
     struct stepper_kinematics *extruder_stepper_alloc(void);
     void extruder_move_fill(struct move *m, double print_time
         , double accel_t, double cruise_t, double decel_t, double start_pos
-        , double start_v, double cruise_v, double accel
+        , double start_v, double cruise_v, double accel, double decel
         , double extra_accel_v, double extra_decel_v);
 """
 

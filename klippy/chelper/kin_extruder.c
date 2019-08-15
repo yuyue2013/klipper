@@ -75,7 +75,7 @@ void __visible
 extruder_move_fill(struct move *m, double print_time
                    , double accel_t, double cruise_t, double decel_t
                    , double start_pos
-                   , double start_v, double cruise_v, double accel
+                   , double start_v, double cruise_v, double accel, double decel
                    , double extra_accel_v, double extra_decel_v)
 {
     // Setup velocity trapezoid
@@ -90,15 +90,15 @@ extruder_move_fill(struct move *m, double print_time
     m->cruise_v = cruise_v;
     if (m->accel_order == 4) {
         extruder_bezier4(&m->accel, start_v, extra_accel_v, accel, accel_t);
-        extruder_bezier4(&m->decel, cruise_v, extra_decel_v, -accel, decel_t);
+        extruder_bezier4(&m->decel, cruise_v, extra_decel_v, -decel, decel_t);
     } else if (m->accel_order == 6) {
         extruder_bezier6(&m->accel, start_v, extra_accel_v, accel, accel_t);
-        extruder_bezier6(&m->decel, cruise_v, extra_decel_v, -accel, decel_t);
+        extruder_bezier6(&m->decel, cruise_v, extra_decel_v, -decel, decel_t);
     } else {
         m->accel.c1 = start_v + extra_accel_v;
         m->accel.c2 = .5 * accel;
         m->decel.c1 = cruise_v + extra_decel_v;
-        m->decel.c2 = -m->accel.c2;
+        m->decel.c2 = -.5 * decel;
     }
 
     // Setup start distance

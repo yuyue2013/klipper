@@ -76,7 +76,7 @@ move_fill(struct move *m, double print_time
           , double accel_t, double cruise_t, double decel_t
           , double start_pos_x, double start_pos_y, double start_pos_z
           , double axes_d_x, double axes_d_y, double axes_d_z
-          , double start_v, double cruise_v, double accel)
+          , double start_v, double cruise_v, double accel, double decel)
 {
     // Setup velocity trapezoid
     m->print_time = print_time;
@@ -90,15 +90,15 @@ move_fill(struct move *m, double print_time
     m->cruise_v = cruise_v;
     if (m->accel_order == 4) {
         move_fill_bezier4(&m->accel, start_v, accel, accel_t);
-        move_fill_bezier4(&m->decel, cruise_v, -accel, decel_t);
+        move_fill_bezier4(&m->decel, cruise_v, -decel, decel_t);
     } else if (m->accel_order == 6) {
         move_fill_bezier6(&m->accel, start_v, accel, accel_t);
-        move_fill_bezier6(&m->decel, cruise_v, -accel, decel_t);
+        move_fill_bezier6(&m->decel, cruise_v, -decel, decel_t);
     } else {
         m->accel.c1 = start_v;
         m->accel.c2 = .5 * accel;
         m->decel.c1 = cruise_v;
-        m->decel.c2 = -m->accel.c2;
+        m->decel.c2 = -.5 * decel;
     }
 
     // Setup for move_get_coord()
@@ -280,7 +280,7 @@ itersolve_calc_position_from_coord(struct stepper_kinematics *sk
 {
     struct move m;
     memset(&m, 0, sizeof(m));
-    move_fill(&m, 0., 0., 1., 0., x, y, z, 0., 1., 0., 0., 1., 0.);
+    move_fill(&m, 0., 0., 1., 0., x, y, z, 0., 1., 0., 0., 1., 0., 0.);
     return sk->calc_position(sk, &m, 0.);
 }
 

@@ -157,7 +157,8 @@ class PrinterExtruder:
                         max_corner_v = fmove.cruise_v
                     else:
                         max_corner_v = max(
-                            max_corner_v, fmove.start_v + fmove.accel * sum_t)
+                            max_corner_v
+                            , fmove.start_v + fmove.effective_accel * sum_t)
                     if max_corner_v >= cruise_v:
                         break
                 sum_t -= fmove.accel_t + fmove.cruise_t + fmove.decel_t
@@ -174,7 +175,8 @@ class PrinterExtruder:
             self.need_motor_enable = False
         axis_d = move.axes_d[3]
         axis_r = axis_d / move.move_d
-        accel = move.accel * axis_r
+        accel = move.effective_accel * axis_r
+        decel = move.effective_decel * axis_r
         start_v = move.start_v * axis_r
         cruise_v = move.cruise_v * axis_r
         accel_t, cruise_t, decel_t = move.accel_t, move.cruise_t, move.decel_t
@@ -206,7 +208,7 @@ class PrinterExtruder:
         # Generate steps
         self.extruder_move_fill(
             self.cmove, print_time, accel_t, cruise_t, decel_t, start_pos,
-            start_v, cruise_v, accel, extra_accel_v, extra_decel_v)
+            start_v, cruise_v, accel, decel, extra_accel_v, extra_decel_v)
         self.stepper.step_itersolve(self.cmove)
         self.extrude_pos = start_pos + axis_d
     cmd_SET_PRESSURE_ADVANCE_help = "Set pressure advance parameters"

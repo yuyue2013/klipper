@@ -65,10 +65,14 @@ class Move:
         #     dist^2 * jerk / 3
         # which is solved using Cardano's formula.
         start_v = math.sqrt(start_v2)
-        b = (2./3. * start_v)**3
-        c = dist * dist * self.jerk / 3.
+        a = 2./3. * start_v
+        b = a*a*a
+        c = dist * dist * jerk / 3.
         d = math.sqrt(c * (c + 2 * b))
-        max_v = (b + c + d)**(1./3.) + (b + c - d)**(1./3.) - start_v / 3.
+        e = (b + c + d)**(1./3.)
+        if e < 0.000000001:
+            return 0
+        max_v = e + a*a / e - start_v / 3.
         return min(max_v * max_v, max_accel_v2)
     def calc_effective_accel(self, start_v, cruise_v):
         if self.accel_order == 2:

@@ -67,7 +67,7 @@ class Move:
         start_v = math.sqrt(start_v2)
         a = 2./3. * start_v
         b = a*a*a
-        c = dist * dist * jerk / 3.
+        c = dist * dist * self.jerk / 3.
         d = math.sqrt(c * (c + 2 * b))
         e = (b + c + d)**(1./3.)
         if e < 0.000000001:

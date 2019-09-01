@@ -560,6 +560,9 @@ class ToolHead:
             'ACCEL_TO_DECEL', params, self.requested_accel_to_decel, above=0.)
         accel_order = gcode.get_int(
             'ACCEL_ORDER', params, self.accel_order, minval=2, maxval=6)
+        if accel_order not in [2, 4, 6]:
+            raise gcode.error(
+                    "ACCEL_ORDER = %s is not a valid choice" % (accel_order,))
         if accel_order != self.accel_order:
             self.accel_order = accel_order
             self.ffi_lib.move_set_accel_order(self.cmove, accel_order)

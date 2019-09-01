@@ -71,7 +71,7 @@ class Move:
         d = math.sqrt(c * (c + 2 * b))
         e = (b + c + d)**(1./3.)
         if e < 0.000000001:
-            return 0
+            return start_v
         max_v = e + a*a / e - start_v / 3.
         return min(max_v * max_v, max_accel_v2)
     def calc_effective_accel(self, start_v, cruise_v):
@@ -80,6 +80,12 @@ class Move:
         effective_accel = min(
                 self.accel, math.sqrt(self.jerk * (cruise_v - start_v) / 6.))
         return effective_accel
+    def calc_min_accel_time(self, start_v, cruise_v):
+        min_accel_time = (cruise_v - start_v) / self.accel
+        if self.accel_order > 2:
+            min_accel_time = max(min_accel_time
+                    , math.sqrt(6. * (cruise_v - start_v) / self.jerk))
+        return min_accel_time
     def calc_junction(self, prev_move):
         if not self.is_kinematic_move or not prev_move.is_kinematic_move:
             return
@@ -119,23 +125,13 @@ class Move:
         # Determine the effective accel and decel
         self.effective_accel = self.calc_effective_accel(start_v, cruise_v)
         self.effective_decel = self.calc_effective_accel(end_v, cruise_v)
-        # Determine accel, cruise, and decel portions of the move distance
-        if cruise_v2 > start_v2:
-            accel_d = (cruise_v2 - start_v2) / (2 * self.effective_accel)
-        else:
-            accel_d = 0
-        if cruise_v2 > end_v2:
-            decel_d = (cruise_v2 - end_v2) / (2 * self.effective_decel)
-        else:
-            decel_d = 0
-        self.accel_r = accel_r = accel_d / self.move_d
-        self.decel_r = decel_r = decel_d / self.move_d
-        self.cruise_r = cruise_r = 1. - accel_r - decel_r
         # Determine time spent in each portion of move (time is the
         # distance divided by average velocity)
-        self.accel_t = accel_r * self.move_d / ((start_v + cruise_v) * 0.5)
-        self.cruise_t = cruise_r * self.move_d / cruise_v
-        self.decel_t = decel_r * self.move_d / ((end_v + cruise_v) * 0.5)
+        self.accel_t = accel_t = self.calc_min_accel_time(start_v, cruise_v)
+        self.decel_t = decel_t = self.calc_min_accel_time(end_v, cruise_v)
+        self.cruise_t = (self.move_d
+                - accel_t * (start_v + cruise_v) * 0.5
+                - decel_t * (end_v + cruise_v) * 0.5) / cruise_v
     def move(self):
         # Generate step times for the move
         next_move_time = self.toolhead.get_next_move_time()

@@ -10,7 +10,7 @@ jerk, snap and so forth, depending on the S-Curve order, using Bezier polynomial
 higher order acceleration schemes make the quality of the prints worse. You
 should consider using high order acceleration only if you already have some
 problems with the prints, otherwise it is not advised to switch over from
-the default `acceleration_order` = 2. Examples of problems S-Curve
+the default acceleration_order = 2. Examples of problems S-Curve
 acceleration may help with:
 
 * Ghosting and ringing in the prints
@@ -44,8 +44,8 @@ derivatives (e.g. acceleration, jerk) can be 0 in the beginning and at the end
 of acceleration depending on the polynomial order, ensuring better smoothness
 of the motion.
 
-Klipper currently supports `acceleration_order` = 2, 4 and 6.
-`acceleration_order` = 2 is the default constant acceleration mode.
+Klipper currently supports acceleration_order = 2, 4 and 6.
+acceleration_order = 2 is the default constant acceleration mode.
 Charts below show the distance covered, velocity and acceleration for different
 acceleration orders.
 
@@ -64,33 +64,34 @@ plans all moves considering the 'effective' acceleration, which can be seen as
 an average acceleration, but then each move is executed using the polynomial
 of the chosen degree. Though instantaneous acceleration exceeds the configured
 maximum toolhead acceleration, because the movement is smoother overall,
-reduction of maximum permitted acceleration is usually necessary.
+the reduction of the maximum permitted acceleration is usually not necessary.
 
 Besides making the movements smoother, S-Curve acceleration *may* improve the
 quality of the prints. One of the theories behind it is that each printer has
-limited non-infinite rigidity of the frame, belts, etc.. When the force is
+limited non-infinite rigidity of the frame, belts, etc. When the force is
 applied or relieved instantly in the beginning and at the end of acceleration
 or deceleration, the system can act as a spring and start oscillating, which
 can be observed in the form of ringing in the prints. S-Curve acceleration
 'spreads' increase and decrease of the force during a longer time, potentially
 reducing the oscillations.
 
-Above has an important consequence: if the short moves are executed with the
+This has an important consequence: if the short moves are executed with the
 same acceleration, the full force must be applied over the shorter period of
-time, effectively nullifying the positive effect on short moves. That's why
-Klipper also limits the maximum kinematic jerk *J* = *da* / *dt* of each
-acceleration and deceleration in S-Curve acceleration mode.
+time, effectively nullifying the positive effect of S-Curve acceleration on
+short moves. That's why Klipper also limits the maximum kinematic jerk
+*J* = *da* / *dt* of each acceleration and deceleration in S-Curve acceleration
+mode.
 
 For the chosen polynomials, the maximum kinematic jerk *J* is
 
 *J* = 6 *a* / *T*
 
-for `acceleration_order` = 4, where *a* is effective acceleration and *T* is
-acceleration time. For `acceleration_order` = 6
+for acceleration_order = 4, where *a* is effective acceleration and *T* is
+acceleration time. For acceleration_order = 6
 
 *J* = 10 *a* / (*T* &#8730;3) &asymp; 5.774 *a* / *T*.
 
-In the end, we use 6 *a* / *T* < `max_jerk` condition to limit the jerk. This
+In the end, we use 6 *a* / *T* < max_jerk condition to limit the jerk. This
 leads to a cubic equation
 
 (*v*<sup>2</sup> - *v*<sub>0</sub><sup>2</sup>) &times;
@@ -111,11 +112,11 @@ looks as follows in this case:
 |![Acceleration](img/s-curve-ea.svg.png)|
 | *Extruder Acceleration* |
 
-Notice the velocity jump with `acceleration_order` = 2 (the 'infinite'
+Notice the velocity jump with acceleration_order = 2 (the 'infinite'
 acceleration spikes at the beginning and the end of acceleration with
-`acceleration_order` = 2 are not shown). With `acceleration_order` > 2
-the velocity is continuous, and for `acceleration_order` = 6 it is even
-smooth.  Thus, `acceleration_order` > 2 can be improve the performance of
+acceleration_order = 2 are not shown). With acceleration_order > 2
+the velocity is continuous, and for acceleration_order = 6 it is even
+smooth.  Thus, acceleration_order > 2 can improve the performance of
 the extruder if pressure advance is enabled.
 
 ### How to enable S-Curve acceleration mode
@@ -205,7 +206,7 @@ limited by jerk and that the initial speed is 0 is
 
 *T* = (18 *L* / *J*)<sup>1/2</sup>.
 
-For example, 1 mm move will take 0.042 sec with *J* = 10'000 mm/sec^3 and
+As an example, 1 mm move will take 0.042 sec with *J* = 10'000 mm/sec^3 and
 0.013 sec with *J* = 100'000 mm/sec^3.
 
 There is another consideration if one uses Pressure Advance: toolhead jerk
@@ -257,10 +258,10 @@ Before tuning, adjust the printer config using G-Code commands:
 issue the following G-Code command to start: `SET_VELOCITY_LIMIT ACCEL=500`.
 Print the test model increasing the acceleration every 5 mm by
 500-1000 mm/sec^2 (`SET_VELOCITY_LIMIT ACCEL=1000` and so forth).
-It's OK if there is some ghosting near the notches that are close by, but do
-notice if it appears elsewhere, e.g. along the *long* sides. Choose the max
-acceleration value below that, and set it using `SET_VELOCITY_LIMIT ACCEL=...`
-command.
+It's OK if there is some ghosting near the notches that are close to each other,
+but do notice if it appears elsewhere, e.g. along the *long* sides. Choose the
+max acceleration value below that, and set it using
+`SET_VELOCITY_LIMIT ACCEL=...` command.
 
 2. **Tune square corner velocity**:
 issue `SET_VELOCITY_LIMIT SQUARE_CORNER_VELOCITY=1 JERK=15000` command to start.
@@ -274,9 +275,9 @@ the test model increasing the maximum jerk every 5 mm by ~10000 mm/sec^3
 (`SET_VELOCITY_LIMIT JERK=20000` and increasing). Choose the value that shows
 the best results overall: `SET_VELOCITY_LIMIT JERK=...`
 
-4. **Tune acceleration order (optional)**: `acceleration_order` = 4 should be
+4. **Tune acceleration order (optional)**: acceleration_order = 4 should be
 fine for many users. If you want, you can also repeat step 3 with
-`SET_VELOCITY_LIMIT ACCEL_ORDER=6` and see if this shows better results with
+`SET_VELOCITY_LIMIT ACCEL_ORDER=6` and see if it shows better results with
 higher `max_jerk` value.
 
 5. **Test pressure advance (optional)**: you should have a tuned pressure
@@ -292,18 +293,19 @@ the 2 values obtained at steps 3 and 5 as the final `max_jerk` value.
 S-Curve acceleration notes
 ==========
  * S-Curve reduces acceleration of short moves, effectively slowing them down
-    * this can be disabled by setting very high `max_jerk` value, e.g. 1000000,
-      but not advised
-    * jerk limit is not applied to extrude-only moves.
+    * this can be disabled by setting very high `max_jerk` value in the config,
+      e.g. 1000000, but this is not advised
+    * jerk limit is not applied to extrude-only moves, they are always executed
+      with the full `max_extrude_only_accel` acceleration.
  * When the move must both accelerate and decelerate, and acceleration for the
    move is below `max_accel_to_decel`, Klipper will not generate the traditional
-   trapezoid, but will put deceleration right after acceleration. This is not a
-   problem with    `acceleration_order` > 2 because the transition between
+   trapezoid, but will put deceleration right after acceleration. This is not
+   much of a problem with acceleration_order > 2 because the transition between
    acceleration and deceleration is smooth anyways (toolhead acceleration is 0
    at the switching point).
  * Instant toolhead acceleration may exceed the configured `max_accel` value.
    `max_accel` serves as a limit for the 'average' acceleration during the move
-   with `acceleration_order` > 2. Still, there is typically no need to reduce
+   with acceleration_order > 2. Still, there is typically no need to reduce
    it, unless the steppers start skipping steps.
  * S-Curve acceleration mode is less demanding on the extruder when pressure
    advance is enabled (unless `max_jerk` is set to a too high value).

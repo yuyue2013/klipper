@@ -307,5 +307,22 @@ S-Curve acceleration notes
    `max_accel` serves as a limit for the 'average' acceleration during the move
    with acceleration_order > 2. Still, there is typically no need to reduce
    it, unless the steppers start skipping steps.
- * S-Curve acceleration mode is less demanding on the extruder when pressure
+ * S-Curve acceleration mode puts less stress on the extruder when pressure
    advance is enabled (unless `max_jerk` is set to a too high value).
+ * Klipper stops the toolhead between extrude and non-extrude moves, which, in
+   case of S-Curve acceleration, can additionally slow down the prints. Zig-zag
+   top/bottom pattern (line/rectilinear in Slic3r), as well as
+   'Connect infill lines' setting in Cura can be used when slicing models
+   to mitigate this issue to some degree. When these options are enabled,
+   slicers will generate mostly connected lines at the top, bottom and infill,
+   preventing toolhead from stopping for most of the moves. This has the most
+   positive effect if `square_corner_velocity` is set reasonably high.
+ * S-Curve acceleration does not work well with `[bed_meshing]` feature
+   currently. As mentioned above, S-Curve acceleration slows down short moves.
+   Incidentally, bed meshing segments long moves into short ones to account for
+   the bed surface height changes. This can lead to inconsistent acceleration
+   across the print area depending on segmentation density. If you must use bed
+   meshing, you can set fade_start < fade_end options in `[bed_meshing]` section
+   to small values (i.e. a few millimeters) to stop Z-height adjustments early
+   and set `max_jerk` to a reasonably high value (around 50000 or more) to make
+   sure the print is not too slow during these initial few millimeters.

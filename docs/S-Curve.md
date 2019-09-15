@@ -239,7 +239,7 @@ If you also want to tune the acceleration, change it to be something like
 
 ```max_accel: 10000```
 
-Prepare the test model in the slicer:
+Prepare the [test](https://www.thingiverse.com/thing:3847206) model in the slicer:
 
  * Suggested layer height is 0.25 mm.
  * Infill and top layers can be set to 0.

@@ -72,11 +72,16 @@ class Move:
         a = 2./3. * start_v
         b = a*a*a
         c = dist * dist * self.jerk / 3.
-        d = math.sqrt(c * (c + 2 * b))
-        e = (b + c + d)**(1./3.)
-        if e < 0.000000001:
-            return start_v
-        max_v = e + a*a / e - start_v / 3.
+        if b * 54 < c:
+            # Make max_v monotonic over start_v: return the max velocity
+            # which works for any start_v velocity below the threshold.
+            max_v = 1.5 * (c*.5)**(1./3.)
+        else:
+            d = math.sqrt(c * (c + 2 * b))
+            e = (b + c + d)**(1./3.)
+            if e < 0.000000001:
+                return start_v
+            max_v = e + a*a / e - start_v / 3.
         return min(max_v * max_v, max_accel_v2)
     def calc_peak_v2(self, start_v2, end_v2, accel):
         peak_v2 = (start_v2 + end_v2 + 2 * self.move_d * accel) * 0.5
@@ -84,14 +89,17 @@ class Move:
             return peak_v2
         start_v = math.sqrt(start_v2)
         end_v = math.sqrt(end_v2)
+        # This is only an approximate of the min distance for acceleration.
         min_accel_d = self.calc_min_accel_time(min(start_v, end_v)
                 , max(start_v, end_v)) * (start_v + end_v) * 0.5
         extra_d = (self.move_d - min_accel_d) * 0.5
         peak_v2 = min(peak_v2
                 , self.calc_max_v2(max(start_v2, end_v2), accel, dist=extra_d)
+                # With accel_order > 2 this term can get smaller than
+                # max(start_v2, end_v2) if min_accel_d is insufficient.
                 , self.calc_max_v2(min(start_v2, end_v2), accel
                     , dist=self.move_d-extra_d))
-        return peak_v2
+        return max(start_v2, end_v2, peak_v2)
     def calc_effective_accel(self, start_v, cruise_v):
         if self.accel_order == 2:
             return self.accel

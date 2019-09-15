@@ -78,6 +78,20 @@ class Move:
             return start_v
         max_v = e + a*a / e - start_v / 3.
         return min(max_v * max_v, max_accel_v2)
+    def calc_peak_v2(self, start_v2, end_v2, accel):
+        peak_v2 = (start_v2 + end_v2 + 2 * self.move_d * accel) * 0.5
+        if self.accel_order == 2:
+            return peak_v2
+        start_v = math.sqrt(start_v2)
+        end_v = math.sqrt(end_v2)
+        min_accel_d = self.calc_min_accel_time(min(start_v, end_v)
+                , max(start_v, end_v)) * (start_v + end_v) * 0.5
+        extra_d = (self.move_d - min_accel_d) * 0.5
+        peak_v2 = min(peak_v2
+                , self.calc_max_v2(max(start_v2, end_v2), accel, dist=extra_d)
+                , self.calc_max_v2(min(start_v2, end_v2), accel
+                    , dist=self.move_d-extra_d))
+        return peak_v2
     def calc_effective_accel(self, start_v, cruise_v):
         if self.accel_order == 2:
             return self.accel
@@ -208,11 +222,8 @@ class MoveQueue:
                     if update_flush_count and peak_cruise_v2:
                         flush_count = i
                         update_flush_count = False
-                    peak_cruise_v2 = min(move.max_cruise_v2,
-                        move.calc_max_v2(smoothed_v2, move.smoothed_accel
-                            , dist=move.move_d*.5),
-                        move.calc_max_v2(next_smoothed_v2, move.smoothed_accel
-                            , dist=move.move_d*.5))
+                    peak_cruise_v2 = min(move.max_cruise_v2, move.calc_peak_v2(
+                        smoothed_v2, next_smoothed_v2, move.smoothed_accel))
                     if delayed:
                         # Propagate peak_cruise_v2 to any delayed moves
                         if not update_flush_count and i < flush_count:
@@ -222,8 +233,9 @@ class MoveQueue:
                                                , min(me_v2, mc_v2))
                         del delayed[:]
                 if not update_flush_count and i < flush_count:
-                    cruise_v2 = min((start_v2 + reachable_start_v2) * .5
-                                    , move.max_cruise_v2, peak_cruise_v2)
+                    cruise_v2 = min(move.max_cruise_v2, peak_cruise_v2
+                            , move.calc_peak_v2(
+                                start_v2, next_end_v2, move.accel))
                     move.set_junction(min(start_v2, cruise_v2), cruise_v2
                                       , min(next_end_v2, cruise_v2))
             else:

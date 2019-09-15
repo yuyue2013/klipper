@@ -10,6 +10,9 @@ import mcu, homing, chelper, kinematics.extruder
 #   mm/second), _v2 is velocity squared (mm^2/s^2), _t is time (in
 #   seconds), _r is ratio (scalar between 0.0 and 1.0)
 
+class error(Exception):
+    pass
+
 # Class to track each move request
 class Move:
     def __init__(self, toolhead, start_pos, end_pos, speed):
@@ -40,6 +43,7 @@ class Move:
         self.max_cruise_v2 = velocity**2
         self.max_smoothed_v2 = 0.
         self.smoothed_accel = toolhead.max_accel_to_decel
+        self.prev_move = None
     def limit_speed(self, speed, accel, jerk=None):
         speed2 = speed**2
         if speed2 < self.max_cruise_v2:
@@ -89,6 +93,7 @@ class Move:
     def calc_junction(self, prev_move):
         if not self.is_kinematic_move or not prev_move.is_kinematic_move:
             return
+        self.prev_move = prev_move
         # Allow extruder to calculate its maximum junction
         extruder_v2 = self.toolhead.extruder.calc_junction(prev_move, self)
         # Find max velocity using "approximated centripetal velocity"
@@ -129,10 +134,21 @@ class Move:
         # distance divided by average velocity)
         self.accel_t = accel_t = self.calc_min_accel_time(start_v, cruise_v)
         self.decel_t = decel_t = self.calc_min_accel_time(end_v, cruise_v)
-        self.cruise_t = (self.move_d
+        self.cruise_t = cruise_t = (self.move_d
                 - accel_t * (start_v + cruise_v) * 0.5
                 - decel_t * (end_v + cruise_v) * 0.5) / cruise_v
+        if cruise_t < -0.000000001:
+            raise error(
+                    'Logic error: impossible move ms_v2=%.3lf, mc_v2=%.3lf'
+                    ', me_v2=%.3lf with move_d=%.3lf, accel=%.3lf, jerk=%.3lf'
+                    % (start_v2, cruise_v2, end_v2, self.move_d, self.accel
+                        , self.jerk))
     def move(self):
+        if self.prev_move and abs(self.prev_move.end_v
+                - self.start_v) > 0.000000001:
+            raise error('Logic error: velocity jump from %.3lf to %.3lf'
+                    % (self.prev_move.end_v, self.start_v))
+        self.prev_move = None
         # Generate step times for the move
         next_move_time = self.toolhead.get_next_move_time()
         if self.is_kinematic_move:

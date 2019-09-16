@@ -278,6 +278,8 @@ DRIP_TIME = 0.150
 class DripModeEndSignal(Exception):
     pass
 
+RINGING_REDUCTION_FACTOR = 10.
+
 # Main code to track events (and their timing) on the printer toolhead
 class ToolHead:
     def __init__(self, config):
@@ -295,7 +297,14 @@ class ToolHead:
         # Velocity and acceleration control
         self.max_velocity = config.getfloat('max_velocity', above=0.)
         self.max_accel = config.getfloat('max_accel', above=0.)
-        self.max_jerk = config.getfloat('max_jerk', self.max_accel * 30.0, above=0.)
+        self.min_jerk_limit_time = config.getfloat(
+                'min_jerk_limit_time', 0., above=0.)
+        if self.min_jerk_limit_time:
+            max_jerk_default = self.max_accel * 6 / (
+                    self.min_jerk_limit_time * RINGING_REDUCTION_FACTOR)
+        else:
+            max_jerk_default = self.max_accel * 30.0
+        self.max_jerk = config.getfloat('max_jerk', max_jerk_default, above=0.)
         self.requested_accel_to_decel = config.getfloat(
             'max_accel_to_decel', self.max_accel * 0.5, above=0.)
         self.max_accel_to_decel = self.requested_accel_to_decel

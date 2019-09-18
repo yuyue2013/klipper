@@ -22,6 +22,8 @@ class Move:
         self.accel = toolhead.max_accel
         self.accel_order = toolhead.accel_order
         self.jerk = toolhead.max_jerk
+        self.min_accel = min(self.accel
+                , self.jerk * toolhead.min_jerk_limit_time / 6.)
         velocity = min(speed, toolhead.max_velocity)
         self.cmove = toolhead.cmove
         self.is_kinematic_move = True
@@ -53,6 +55,8 @@ class Move:
         self.smoothed_accel = min(self.smoothed_accel, self.accel)
         if jerk and jerk < self.jerk:
             self.jerk = jerk
+        self.min_accel = min(self.accel
+                , self.jerk * self.toolhead.min_jerk_limit_time / 6.)
     def calc_max_v2(self, start_v2, accel, dist=None):
         dist = dist or self.move_d
         # Check if accel is the limiting factor
@@ -82,7 +86,8 @@ class Move:
             if e < 0.000000001:
                 return start_v
             max_v = e + a*a / e - start_v / 3.
-        return min(max_v * max_v, max_accel_v2)
+        return max(min(max_v * max_v, max_accel_v2)
+                , start_v2 + 2.0 * dist * self.min_accel)
     def calc_peak_v2(self, start_v2, end_v2, accel):
         peak_v2 = (start_v2 + end_v2 + 2 * self.move_d * accel) * 0.5
         if self.accel_order == 2:
@@ -103,14 +108,17 @@ class Move:
     def calc_effective_accel(self, start_v, cruise_v):
         if self.accel_order == 2:
             return self.accel
-        effective_accel = min(
-                self.accel, math.sqrt(self.jerk * (cruise_v - start_v) / 6.))
+        effective_accel = max(self.min_accel, min(self.accel
+            , math.sqrt(self.jerk * (cruise_v - start_v) / 6.)))
         return effective_accel
     def calc_min_accel_time(self, start_v, cruise_v):
         min_accel_time = (cruise_v - start_v) / self.accel
         if self.accel_order > 2:
             min_accel_time = max(min_accel_time
                     , math.sqrt(6. * (cruise_v - start_v) / self.jerk))
+        if self.min_accel:
+            min_accel_time = min(min_accel_time
+                    , (cruise_v - start_v) / self.min_accel)
         return min_accel_time
     def calc_junction(self, prev_move):
         if not self.is_kinematic_move or not prev_move.is_kinematic_move:

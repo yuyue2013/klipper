@@ -59,7 +59,6 @@ class PrinterExtruder:
         self.stepper.setup_itersolve('extruder_stepper_alloc')
         self.stepper.set_trapq(self.trapq)
         toolhead.register_move_handler(self.stepper.generate_steps)
-        toolhead.register_move_handler(self._free_moves)
         # Setup SET_PRESSURE_ADVANCE command
         gcode = self.printer.lookup_object('gcode')
         if self.name in ('extruder', 'extruder0'):
@@ -69,7 +68,7 @@ class PrinterExtruder:
         gcode.register_mux_command("SET_PRESSURE_ADVANCE", "EXTRUDER",
                                    self.name, self.cmd_SET_PRESSURE_ADVANCE,
                                    desc=self.cmd_SET_PRESSURE_ADVANCE_help)
-    def _free_moves(self, flush_time):
+    def update_move_time(self, flush_time):
         self.trapq_free_moves(self.trapq, flush_time)
     def get_status(self, eventtime):
         return dict(
@@ -231,6 +230,8 @@ class PrinterExtruder:
 class DummyExtruder:
     def set_active(self, print_time, is_active):
         return 0.
+    def update_move_time(self, flush_time):
+        pass
     def motor_off(self, move_time):
         pass
     def check_move(self, move):

@@ -186,7 +186,7 @@ STALL_TIME = 0.100
 MOVE_BATCH_TIME = 0.500
 
 DRIP_SEGMENT_TIME = 0.050
-DRIP_TIME = 0.150
+DRIP_TIME = 0.100
 class DripModeEndSignal(Exception):
     pass
 
@@ -235,6 +235,10 @@ class ToolHead:
         self.idle_flush_print_time = 0.
         self.print_stall = 0
         self.drip_completion = None
+        # XXX - flush window
+        self.full_flush_delay = 0.
+        self.full_flush_times = []
+        self.last_full_flush_time = 0.
         # Setup iterative solver
         ffi_main, ffi_lib = chelper.get_ffi()
         self.trapq = ffi_main.gc(ffi_lib.trapq_alloc(), ffi_lib.trapq_free)
@@ -270,24 +274,30 @@ class ToolHead:
     # Print time tracking
     def _update_move_time(self, next_print_time, lazy=True):
         batch_time = MOVE_BATCH_TIME
+        mh_flush_delay = mcu_flush_delay = 0.
+        if lazy:
+            mh_flush_delay = self.full_flush_delay
+            mcu_flush_delay = self.move_flush_time
         while 1:
-            flush_to_time = min(self.print_time + batch_time, next_print_time)
-            self.print_time = flush_to_time
+            self.print_time = min(self.print_time + batch_time, next_print_time)
+            flush_time = self.print_time - mh_flush_delay
             for mh in self.move_handlers:
-                mh(flush_to_time)
-            self.trapq_free_moves(self.trapq, flush_to_time)
-            if lazy:
-                flush_to_time -= self.move_flush_time
+                mh(flush_time)
+            self.trapq_free_moves(self.trapq, flush_time - mh_flush_delay)
+            self.extruder.update_move_time(flush_time - mh_flush_delay)
+            flush_time -= mcu_flush_delay
             for m in self.all_mcus:
-                m.flush_moves(flush_to_time)
+                m.flush_moves(flush_time)
             if self.print_time >= next_print_time:
                 break
     def _calc_print_time(self):
         curtime = self.reactor.monotonic()
         est_print_time = self.mcu.estimated_print_time(curtime)
-        if est_print_time + self.buffer_time_start > self.print_time:
-            self.print_time = est_print_time + self.buffer_time_start
-            self.last_print_start_time = self.print_time
+        min_print_time = est_print_time + self.buffer_time_start
+        min_print_time = max(min_print_time, self.last_full_flush_time)
+        min_print_time += self.full_flush_delay
+        if min_print_time > self.print_time:
+            self.print_time = self.last_print_start_time = min_print_time
             self.printer.send_event("toolhead:sync_print_time",
                                     curtime, est_print_time, self.print_time)
     def _process_moves(self, moves):
@@ -326,7 +336,9 @@ class ToolHead:
         self.reactor.update_timer(self.flush_timer, self.reactor.NEVER)
         self.move_queue.set_flush_time(self.buffer_time_high)
         self.idle_flush_print_time = 0.
-        self._update_move_time(self.print_time, lazy=False)
+        if self.last_full_flush_time < self.print_time:
+            self.last_full_flush_time = self.print_time + self.full_flush_delay
+        self._update_move_time(self.last_full_flush_time, lazy=False)
     def _flush_lookahead(self):
         if self.special_queuing_state:
             return self._full_flush()
@@ -430,12 +442,13 @@ class ToolHead:
         return self.extruder
     # Homing "drip move" handling
     def _update_drip_move_time(self, next_print_time):
+        flush_delay = DRIP_TIME + self.move_flush_time + self.full_flush_delay
         while self.print_time < next_print_time:
             if self.drip_completion.test():
                 raise DripModeEndSignal()
             curtime = self.reactor.monotonic()
             est_print_time = self.mcu.estimated_print_time(curtime)
-            wait_time = self.print_time - est_print_time - DRIP_TIME
+            wait_time = self.print_time - est_print_time - flush_delay
             if wait_time > 0. and not self.mcu.is_fileoutput():
                 # Pause before sending more steps
                 self.drip_completion.wait(curtime + wait_time)
@@ -500,6 +513,15 @@ class ToolHead:
         return self.trapq
     def register_move_handler(self, handler):
         self.move_handlers.append(handler)
+    def note_flush_delay(self, delay, old_delay=0.):
+        self._full_flush()
+        cur_delay = self.full_flush_delay
+        if old_delay:
+            self.full_flush_times.pop(self.full_flush_times.index(old_delay))
+        if delay:
+            self.full_flush_times.append(delay)
+        new_delay = max(self.full_flush_times + [0.])
+        self.full_flush_delay = new_delay
     def get_max_velocity(self):
         return self.max_velocity, self.max_accel
     def get_max_axis_halt(self):

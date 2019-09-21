@@ -327,7 +327,7 @@ class ToolHead:
         self.max_velocity = config.getfloat('max_velocity', above=0.)
         self.max_accel = config.getfloat('max_accel', above=0.)
         self.min_jerk_limit_time = config.getfloat(
-                'min_jerk_limit_time', 0., above=0.)
+                'min_jerk_limit_time', 0., minval=0.)
         if self.min_jerk_limit_time:
             max_jerk_default = self.max_accel * 6 / (
                     self.min_jerk_limit_time * RINGING_REDUCTION_FACTOR)

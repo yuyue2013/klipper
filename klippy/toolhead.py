@@ -46,7 +46,6 @@ class Move:
         self.max_smoothed_v2 = 0.
         self.smoothed_accel = toolhead.max_accel_to_decel
         self.prev_move = None
-        self.junction_max_v2 = 0.
     def limit_speed(self, speed, accel, jerk=None):
         speed2 = speed**2
         if speed2 < self.max_cruise_v2:
@@ -144,10 +143,15 @@ class Move:
         move_centripetal_v2 = .5 * self.move_d * tan_theta_d2 * self.accel
         prev_move_centripetal_v2 = (.5 * prev_move.move_d * tan_theta_d2
                                     * prev_move.accel)
-        self.junction_max_v2 = min(
+        self.max_start_v2 = min(
             R * self.accel, R * prev_move.accel,
             move_centripetal_v2, prev_move_centripetal_v2,
-            extruder_v2, self.max_cruise_v2, prev_move.max_cruise_v2)
+            extruder_v2, self.max_cruise_v2, prev_move.max_cruise_v2,
+            prev_move.calc_max_v2(prev_move.max_start_v2, prev_move.accel))
+        self.max_smoothed_v2 = min(
+            self.max_start_v2,
+            prev_move.calc_max_v2(prev_move.max_smoothed_v2
+                , prev_move.smoothed_accel))
     def set_junction(self, start_v2, cruise_v2, end_v2):
         # Determine move velocities
         self.start_v = start_v = math.sqrt(start_v2)
@@ -198,31 +202,18 @@ class MoveQueue:
     def __init__(self):
         self.extruder_lookahead = None
         self.queue = []
-        self.forward_pass_watermark = 0
         self.leftover = 0
         self.junction_flush = LOOKAHEAD_FLUSH_TIME
     def reset(self):
         del self.queue[:]
-        self.forward_pass_watermark = 0
         self.leftover = 0
         self.junction_flush = LOOKAHEAD_FLUSH_TIME
     def set_flush_time(self, flush_time):
         self.junction_flush = flush_time
     def set_extruder(self, extruder):
         self.extruder_lookahead = extruder.lookahead
-    def _forward_pass(self, start):
-        for i in range(start, len(self.queue)):
-            move = self.queue[i]
-            prev_move = move.prev_move
-            if not prev_move:
-                continue
-            move.max_start_v2 = min(move.junction_max_v2
-                    , prev_move.calc_max_v2(prev_move.max_start_v2
-                        , prev_move.accel))
-            move.max_smoothed_v2 = min(move.max_start_v2
-                    , prev_move.calc_max_v2(prev_move.max_smoothed_v2
-                        , prev_move.smoothed_accel))
-    def _backward_pass(self, limit, lazy):
+    def flush(self, lazy=False):
+        self.junction_flush = LOOKAHEAD_FLUSH_TIME
         update_flush_count = lazy
         queue = self.queue
         flush_count = len(queue)
@@ -231,7 +222,7 @@ class MoveQueue:
         # after the last move.
         delayed = []
         next_end_v2 = next_smoothed_v2 = peak_cruise_v2 = 0.
-        for i in range(flush_count-1, limit-1, -1):
+        for i in range(flush_count-1, self.leftover-1, -1):
             move = queue[i]
             reachable_start_v2 = move.calc_max_v2(next_end_v2, move.accel)
             start_v2 = min(move.max_start_v2, reachable_start_v2)
@@ -269,27 +260,15 @@ class MoveQueue:
             next_end_v2 = start_v2
             next_smoothed_v2 = smoothed_v2
         if update_flush_count:
-            return 0
-        return flush_count
-    def flush(self, lazy=False):
-        self.junction_flush = LOOKAHEAD_FLUSH_TIME
-        queue = self.queue
-        self._forward_pass(self.forward_pass_watermark)
-        self.forward_pass_watermark = len(queue)
-        flush_count = self._backward_pass(self.leftover, lazy)
-        if not flush_count:
             return
         # Allow extruder to do its lookahead
         move_count = self.extruder_lookahead(queue, flush_count, lazy)
-        if not move_count:
-            return
         # Generate step times for all moves ready to be flushed
         for move in queue[:move_count]:
             move.move()
         # Remove processed moves from the queue
         self.leftover = flush_count - move_count
         del queue[:move_count]
-        self.forward_pass_watermark = len(queue)
     def add_move(self, move):
         self.queue.append(move)
         if len(self.queue) == 1:

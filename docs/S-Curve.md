@@ -122,7 +122,13 @@ done with acceleration_order = 2, high acceleration and square_corner_velocity.
    `SET_VELOCITY_LIMIT SQUARE_CORNER_VELOCITY=20` or higher. Basically, you
    need to *decrease* the quality of the print.
 4. Measure the distance *D* (in mm) between *N* oscillations along X axis near
-   the notches, preferably skipping the first oscillation or two.
+   the notches, preferably skipping the first oscillation or two. To measure
+   the distance between oscillations more easily, mark the oscillations first,
+   then measure them with a ruler or calipers:
+
+       |![Mark ringing](img/ringing-mark.jpg)|![Measure ringing](img/ringing-measure.jpg)|
+       |:---:|:---:|
+
 5. Compute the ringing frequency = *V* &middot; *N* / *D* (Hz) where *V* is
    the velocity for outer perimeters (mm/sec).
 6. Do (4) - (5) for Y axis as well.

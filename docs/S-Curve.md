@@ -126,8 +126,8 @@ done with acceleration_order = 2, high acceleration and square_corner_velocity.
    the distance between oscillations more easily, mark the oscillations first,
    then measure them with a ruler or calipers:
 
-       |![Mark ringing](img/ringing-mark.jpg)|![Measure ringing](img/ringing-measure.jpg)|
-       |:---:|:---:|
+    |![Mark ringing](img/ringing-mark.jpg)|![Measure ringing](img/ringing-measure.jpg)|
+    |:--:|:--:|
 
 5. Compute the ringing frequency = *V* &middot; *N* / *D* (Hz) where *V* is
    the velocity for outer perimeters (mm/sec).

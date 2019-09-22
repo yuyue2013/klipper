@@ -216,7 +216,7 @@ decrease min_jerk_limit_time and/or max_jerk values. min_jerk_limit_time impacts
 the acceleration of short moves, and max_jerk parameter has effect on all moves.
 
 If you want to decrease print times, you can try increasing max_jerk.
-It is not recommended to increase min_jerk_limit_time above
+It is not recommended to increase min_jerk_limit_time significantly above
 1.0 / min_ringing_frequency value to avoid ringing around resonances.
 
 If extruder struggles with Pressure Advance on very short moves, decrease

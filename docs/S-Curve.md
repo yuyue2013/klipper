@@ -124,7 +124,7 @@ done with acceleration_order = 2, high acceleration and square_corner_velocity.
 4. Measure the distance *D* (in mm) between *N* oscillations along X axis near
    the notches, preferably skipping the first oscillation or two. To measure
    the distance between oscillations more easily, mark the oscillations first,
-   then measure them with a ruler or calipers:
+   then measure the distance between the marks with a ruler or calipers:
 
     |![Mark ringing](img/ringing-mark.jpg)|![Measure ringing](img/ringing-measure.jpg)|
     |:--:|:--:|

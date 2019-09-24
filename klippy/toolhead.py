@@ -316,8 +316,8 @@ class MoveQueue:
                     # Propagate peak_cruise_v2 to any delayed moves
                     for m in delayed:
                         ms_v2 = min(m.accel.max_start_v2, m.decel.max_end_v2)
-                        mc_v2 = min(peak_cruise_v2, ms_v2)
                         me_v2 = m.decel.max_start_v2
+                        mc_v2 = min(peak_cruise_v2, max(ms_v2, me_v2))
                         m.set_junction(min(ms_v2, mc_v2), mc_v2
                                        , min(me_v2, mc_v2))
                     cruise_v2 = min(move.max_cruise_v2, peak_cruise_v2

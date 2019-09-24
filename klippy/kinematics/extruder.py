@@ -146,7 +146,7 @@ class PrinterExtruder:
             sum_t = lookahead_t
             for j in range(i+1, flush_count):
                 fmove = moves[j]
-                if not fmove.max_start_v2:
+                if not fmove.accel.max_start_v2:
                     break
                 if fmove.cruise_v > max_corner_v:
                     if (not max_corner_v

@@ -187,7 +187,8 @@ class Move:
                 self.accel_t, self.cruise_t, self.decel_t,
                 self.start_pos[0], self.start_pos[1], self.start_pos[2],
                 self.axes_d[0], self.axes_d[1], self.axes_d[2],
-                self.start_v, self.cruise_v, self.effective_accel, self.effective_decel)
+                self.start_v, self.cruise_v, self.effective_accel, self.effective_decel,
+                self.toolhead.accel_compensation)
             self.toolhead.kin.move(next_move_time, self)
         if self.axes_d[3]:
             self.toolhead.extruder.move(next_move_time, self)
@@ -324,6 +325,8 @@ class ToolHead:
         self.config_max_jerk = self.max_jerk
         self.config_square_corner_velocity = self.square_corner_velocity
         self.junction_deviation = 0.
+        self.accel_compensation = config.getfloat(
+            'accel_compensation', 0., minval=0.)
         self._calc_junction_deviation()
         # Print time tracking
         self.buffer_time_low = config.getfloat(
@@ -626,6 +629,8 @@ class ToolHead:
             self.accel_order = accel_order
             self.ffi_lib.move_set_accel_order(self.cmove, accel_order)
             self.extruder.setup_accel_order(accel_order)
+        self.accel_compensation = gcode.get_float(
+            'ACCEL_COMPENSATION', params, self.accel_compensation, minval=0.)
         self.max_velocity = min(max_velocity, self.config_max_velocity)
         self.max_accel = min(max_accel, self.config_max_accel)
         self.max_jerk = min(max_jerk, self.config_max_jerk)

@@ -289,6 +289,7 @@ class DripModeEndSignal(Exception):
     pass
 
 RINGING_REDUCTION_FACTOR = 10.
+MAX_ACCEL_COMPENSATION = 0.005
 
 # Main code to track events (and their timing) on the printer toolhead
 class ToolHead:
@@ -326,7 +327,7 @@ class ToolHead:
         self.config_square_corner_velocity = self.square_corner_velocity
         self.junction_deviation = 0.
         self.accel_compensation = config.getfloat(
-            'accel_compensation', 0., minval=0.)
+            'accel_compensation', 0., minval=0., maxval=MAX_ACCEL_COMPENSATION)
         self._calc_junction_deviation()
         # Print time tracking
         self.buffer_time_low = config.getfloat(
@@ -630,7 +631,8 @@ class ToolHead:
             self.ffi_lib.move_set_accel_order(self.cmove, accel_order)
             self.extruder.setup_accel_order(accel_order)
         self.accel_compensation = gcode.get_float(
-            'ACCEL_COMPENSATION', params, self.accel_compensation, minval=0.)
+            'ACCEL_COMPENSATION', params, self.accel_compensation, minval=0.
+            , maxval=MAX_ACCEL_COMPENSATION)
         self.max_velocity = min(max_velocity, self.config_max_velocity)
         self.max_accel = min(max_accel, self.config_max_accel)
         self.max_jerk = min(max_jerk, self.config_max_jerk)

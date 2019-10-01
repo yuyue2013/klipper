@@ -640,9 +640,11 @@ class ToolHead:
                                           self.config_square_corner_velocity)
         self._calc_junction_deviation()
         msg = ("max_velocity: %.6f max_accel: %.6f max_accel_to_decel: %.6f\n"
-               "max_jerk: %.6f accel_order: %d square_corner_velocity: %.6f"% (
+               "max_jerk: %.6f accel_order: %d square_corner_velocity: %.6f\n"
+               "accel_compensation: %.8f\n"% (
                    self.max_velocity, self.max_accel, self.max_accel_to_decel,
-                   self.max_jerk, accel_order, self.square_corner_velocity))
+                   self.max_jerk, accel_order, self.square_corner_velocity,
+                   self.accel_compensation))
         self.printer.set_rollover_info("toolhead", "toolhead: %s" % (msg,))
         gcode.respond_info(msg, log=False)
     def cmd_M204(self, params):

@@ -96,8 +96,8 @@ move_fill(struct move *m, double print_time
         move_fill_bezier4(&m->accel, start_v, accel, accel_t, accel_comp);
         move_fill_bezier4(&m->decel, cruise_v, -decel, decel_t, accel_comp);
     } else if (m->accel_order == 6) {
-        move_fill_bezier6(&m->accel, start_v, accel, accel_t, accel_comp, accel_comp);
-        move_fill_bezier6(&m->decel, cruise_v, -decel, decel_t, accel_comp, accel_comp);
+        move_fill_bezier6(&m->accel, start_v, accel, accel_t, accel_comp);
+        move_fill_bezier6(&m->decel, cruise_v, -decel, decel_t, accel_comp);
     } else {
         m->accel.c1 = start_v;
         m->accel.c2 = .5 * accel;

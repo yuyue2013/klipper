@@ -321,7 +321,6 @@ class ToolHead:
             'square_corner_velocity', 5., minval=0.)
         self.config_max_velocity = self.max_velocity
         self.config_max_accel = self.max_accel
-        self.config_max_jerk = self.max_jerk
         self.config_square_corner_velocity = self.square_corner_velocity
         self.junction_deviation = 0.
         self._calc_junction_deviation()
@@ -611,7 +610,7 @@ class ToolHead:
         max_velocity = gcode.get_float('VELOCITY', params, self.max_velocity,
                                        above=0.)
         max_accel = gcode.get_float('ACCEL', params, self.max_accel, above=0.)
-        max_jerk = gcode.get_float('JERK', params, self.max_jerk, above=0.)
+        self.max_jerk = gcode.get_float('JERK', params, self.max_jerk, above=0.)
         square_corner_velocity = gcode.get_float(
             'SQUARE_CORNER_VELOCITY', params, self.square_corner_velocity,
             minval=0.)
@@ -628,7 +627,6 @@ class ToolHead:
             self.extruder.setup_accel_order(accel_order)
         self.max_velocity = min(max_velocity, self.config_max_velocity)
         self.max_accel = min(max_accel, self.config_max_accel)
-        self.max_jerk = min(max_jerk, self.config_max_jerk)
         self.square_corner_velocity = min(square_corner_velocity,
                                           self.config_square_corner_velocity)
         self._calc_junction_deviation()

@@ -34,6 +34,12 @@ move_set_accel_order(struct move *m, int accel_order)
     m->accel_order = accel_order;
 }
 
+static inline double
+max_accel_comp(double accel_comp, double accel_t)
+{
+    return fmin(accel_comp, 10. * accel_t * accel_t);
+}
+
 // Determine the coefficients for a 4th order bezier position function
 static void
 move_fill_bezier4(struct move_accel *ma, double start_v
@@ -93,11 +99,15 @@ move_fill(struct move *m, double print_time
     // Setup for accel/cruise/decel phases
     m->cruise_v = cruise_v;
     if (m->accel_order == 4) {
-        move_fill_bezier4(&m->accel, start_v, accel, accel_t, accel_comp);
-        move_fill_bezier4(&m->decel, cruise_v, -decel, decel_t, accel_comp);
+        move_fill_bezier4(&m->accel, start_v, accel, accel_t
+                , max_accel_comp(accel_comp, accel_t));
+        move_fill_bezier4(&m->decel, cruise_v, -decel, decel_t
+                , max_accel_comp(accel_comp, decel_t));
     } else if (m->accel_order == 6) {
-        move_fill_bezier6(&m->accel, start_v, accel, accel_t, accel_comp);
-        move_fill_bezier6(&m->decel, cruise_v, -decel, decel_t, accel_comp);
+        move_fill_bezier6(&m->accel, start_v, accel, accel_t
+                , max_accel_comp(accel_comp, accel_t));
+        move_fill_bezier6(&m->decel, cruise_v, -decel, decel_t
+                , max_accel_comp(accel_comp, decel_t));
     } else {
         m->accel.c1 = start_v;
         m->accel.c2 = .5 * accel;

@@ -156,9 +156,9 @@ class PrinterExtruder:
                     if sum_t >= fmove.accel_t:
                         max_corner_v = fmove.cruise_v
                     else:
-                        max_corner_v = max(
-                            max_corner_v
-                            , fmove.start_v + fmove.effective_accel * sum_t)
+                        fmove_v = fmove.start_accel_v + (sum_t
+                                + fmove.accel_offset_t) * fmove.effective_accel
+                        max_corner_v = max(max_corner_v, fmove_v)
                     if max_corner_v >= cruise_v:
                         break
                 sum_t -= fmove.accel_t + fmove.cruise_t + fmove.decel_t

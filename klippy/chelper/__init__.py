@@ -46,10 +46,14 @@ defs_itersolve = """
     struct move *move_alloc(void);
     void move_set_accel_order(struct move *m, int accel_order);
     void move_fill(struct move *m, double print_time
-        , double accel_t, double cruise_t, double decel_t
+        , double accel_t, double accel_offset_t, double total_accel_t
+        , double cruise_t
+        , double decel_t, double decel_offset_t, double total_decel_t
         , double start_pos_x, double start_pos_y, double start_pos_z
         , double axes_d_x, double axes_d_y, double axes_d_z
-        , double start_v, double cruise_v, double accel, double decel);
+        , double start_accel_v, double cruise_v
+        , double effective_accel, double effective_decel);
+    double move_get_time(struct move *m, double distance);
     int32_t itersolve_gen_steps(struct stepper_kinematics *sk, struct move *m);
     void itersolve_set_stepcompress(struct stepper_kinematics *sk
         , struct stepcompress *sc, double step_dist);
@@ -84,8 +88,12 @@ defs_kin_winch = """
 defs_kin_extruder = """
     struct stepper_kinematics *extruder_stepper_alloc(void);
     void extruder_move_fill(struct move *m, double print_time
-        , double accel_t, double cruise_t, double decel_t, double start_pos
-        , double start_v, double cruise_v, double accel, double decel
+        , double accel_t, double accel_offset_t, double total_accel_t
+        , double cruise_t
+        , double decel_t, double decel_offset_t, double total_decel_t
+        , double start_pos
+        , double start_accel_v, double cruise_v
+        , double effective_accel, double effective_decel
         , double extra_accel_v, double extra_decel_v);
 """
 

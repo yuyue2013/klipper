@@ -16,6 +16,7 @@ class error(Exception):
 class Acceleration:
     def __init__(self, move, accel, jerk=None):
         toolhead = move.toolhead
+        self.ffi_lib = toolhead.ffi_lib
         self.move = move
         self.start_accel = self
         self.prev_accel = None
@@ -99,9 +100,11 @@ class Acceleration:
                 , self.move.max_cruise_v2)
         self.max_end_v2 = self.calc_max_v2()
         return  # TODO: enable when the rest of the code is ready
-        if not prev_accel or (prev_accel.acceleration_order
-                != self.acceleration_order) or junction_max_v2 <= max(
-                prev_accel.max_start_v2, self.max_start_v2):
+        if not prev_accel or not junction_max_v2 or (prev_accel.accel_order
+                != self.accel_order):
+            return
+        # TODO: check that extrude can combine (handled via junction_max_v2 now)
+        if junction_max_v2 <= max(prev_accel.max_start_v2, self.max_start_v2):
             return
         # Try combined acceleration
         combined = Acceleration(self.move, self.max_accel, self.jerk)
@@ -121,14 +124,10 @@ class Acceleration:
             self.combined_d = combined.combined_d
             self.start_accel = start_accel
             self.prev_accel = prev_accel
-    def move_get_time(self, accel_d, effective_accel):
+    def move_get_time(self, cmove, accel_d):
         if accel_d < 0.000000001:
             return 0.
-        # This only works for acceleration_order == 2
-        cruise_v = math.sqrt(self.start_accel.max_start_v2
-                + 2.0 * accel_d * effective_accel)
-        start_v = math.sqrt(self.start_accel.max_start_v2)
-        return 2.0 * accel_d / (cruise_v + start_v)
+        return self.ffi_lib.move_get_time(cmove, accel_d)
     def set_cruise_v(self, cruise_v, combined_accel_d):
         remaining_accel_d = self.combined_d
         accel = self
@@ -158,6 +157,15 @@ class Acceleration:
             return
         effective_accel = combined.calc_effective_accel(
                 start_accel_v, cruise_v)
+        cmove = combined.move.cmove
+        self.move.toolhead.move_fill(
+            cmove, 0.,
+            combined_accel_t, 0., combined_accel_t,
+            0.,
+            0., 0., 0.,
+            0., 0., 0.,
+            0., 1., 0.,
+            start_accel_v, cruise_v, effective_accel, 0.)
         remaining_accel_t = combined_accel_t
         while True:
             a.effective_accel = effective_accel
@@ -168,12 +176,12 @@ class Acceleration:
             a.start_accel_v = start_accel_v
             if time_offset_from_start:
                 a.accel_offset_t = combined.move_get_time(
-                        remaining_accel_d, effective_accel)
+                        cmove, remaining_accel_d)
                 a.accel_t = remaining_accel_t - a.accel_offset_t
             else:
                 a.accel_offset_t = combined_accel_t - remaining_accel_t
                 a.accel_t = combined_accel_t - combined.move_get_time(
-                        remaining_accel_d, effective_accel)
+                        cmove, remaining_accel_d)
             remaining_accel_d -= a.accel_d
             remaining_accel_t -= a.accel_t
             if a == combined.start_accel:
@@ -305,10 +313,13 @@ class Move:
         if self.is_kinematic_move:
             self.toolhead.move_fill(
                 self.cmove, next_move_time,
-                self.accel_t, self.cruise_t, self.decel_t,
+                self.accel_t, self.accel_offset_t, self.total_accel_t,
+                self.cruise_t,
+                self.decel_t, self.decel_offset_t, self.total_decel_t,
                 self.start_pos[0], self.start_pos[1], self.start_pos[2],
                 self.axes_d[0], self.axes_d[1], self.axes_d[2],
-                self.start_v, self.cruise_v, self.effective_accel, self.effective_decel)
+                self.start_accel_v, self.cruise_v,
+                self.effective_accel, self.effective_decel)
             self.toolhead.kin.move(next_move_time, self)
         if self.axes_d[3]:
             self.toolhead.extruder.move(next_move_time, self)

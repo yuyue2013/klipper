@@ -133,7 +133,7 @@ class PrinterExtruder:
         return move.max_cruise_v2
     def lookahead(self, moves, flush_count, lazy):
         lookahead_t = self.pressure_advance_lookahead_time
-        if not self.pressure_advance or not lookahead_t:
+        if True: # TODO: enable: not self.pressure_advance or not lookahead_t:
             return flush_count
         # Calculate max_corner_v - the speed the head will accelerate
         # to after cornering.
@@ -175,17 +175,19 @@ class PrinterExtruder:
             self.need_motor_enable = False
         axis_d = move.axes_d[3]
         axis_r = axis_d / move.move_d
-        accel = move.effective_accel * axis_r
-        decel = move.effective_decel * axis_r
-        start_v = move.start_v * axis_r
+        effective_accel = move.effective_accel * axis_r
+        effective_decel = move.effective_decel * axis_r
+        start_accel_v = move.start_accel_v * axis_r
         cruise_v = move.cruise_v * axis_r
         accel_t, cruise_t, decel_t = move.accel_t, move.cruise_t, move.decel_t
+        accel_offset_t, total_accel_t = move.accel_offset_t, move.total_accel_t
+        decel_offset_t, total_decel_t = move.decel_offset_t, move.total_decel_t
 
         # Update for pressure advance
         extra_accel_v = extra_decel_v = 0.
         start_pos = self.extrude_pos
         if (axis_d >= 0. and (move.axes_d[0] or move.axes_d[1])
-            and self.pressure_advance):
+                and False): # TODO: enable self.pressure_advance):
             # Calculate extra_accel_v
             pressure_advance = self.pressure_advance * move.extrude_r
             prev_pressure_d = start_pos - move.start_pos[3]
@@ -207,8 +209,12 @@ class PrinterExtruder:
 
         # Generate steps
         self.extruder_move_fill(
-            self.cmove, print_time, accel_t, cruise_t, decel_t, start_pos,
-            start_v, cruise_v, accel, decel, extra_accel_v, extra_decel_v)
+            self.cmove, print_time,
+            accel_t, accel_offset_t, total_accel_t,
+            cruise_t,
+            decel_t, decel_offset_t, total_decel_t,
+            start_pos, start_accel_v, cruise_v,
+            effective_accel, effective_decel, extra_accel_v, extra_decel_v)
         self.stepper.step_itersolve(self.cmove)
         self.extrude_pos = start_pos + axis_d
     cmd_SET_PRESSURE_ADVANCE_help = "Set pressure advance parameters"

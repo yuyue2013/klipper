@@ -87,7 +87,7 @@ class Acceleration:
         return min_accel_time
     def calc_min_accel_dist(self, cruise_v2):
         start_v2 = self.start_accel.max_start_v2
-        if cruise_v2 >= start_v2: return 0.
+        if cruise_v2 <= start_v2: return 0.
         if self.accel_order == 2:
             return (cruise_v2 - start_v2) * 0.5 / self.max_accel
         start_v = math.sqrt(start_v2)
@@ -105,20 +105,19 @@ class Acceleration:
         # TODO: check that extrude can combine (handled via junction_max_v2 now)
         if junction_max_v2 <= max(prev_accel.max_start_v2, self.max_start_v2):
             return
+        if prev_accel.max_accel < self.max_accel or prev_accel.jerk < self.jerk:
+            return
+        start_accel = prev_accel.start_accel
         # Try combined acceleration
         combined = Acceleration(self.move, self.max_accel, self.jerk)
         start_accel = prev_accel.start_accel
-        combined.limit_accel(min(prev_accel.max_accel
-            # Make sure to not exceed junction_max_v2 during acceleration
-            # During S-Curve acceleration, the actual speed can overshoot
-            # (start_v + accel * t) by (accel * t / (6 * sqrt(3)))
-            , (junction_max_v2 * (53. / 54.) - start_accel.max_start_v2) / (
-                2 * prev_accel.combined_d)), prev_accel.jerk)
+        # Make sure to not exceed junction_max_v2 during acceleration
+        combined.limit_accel((junction_max_v2 - start_accel.max_start_v2)
+                / (2 * prev_accel.combined_d))
         combined.start_accel = start_accel
         combined.combined_d += prev_accel.combined_d
         combined.max_end_v2 = combined.calc_max_v2()
         if combined.max_end_v2 + 0.000000001 >= self.max_end_v2:
-            self.limit_accel(combined.max_accel, combined.jerk)
             self.max_end_v2 = combined.max_end_v2
             self.combined_d = combined.combined_d
             self.start_accel = start_accel
@@ -215,7 +214,7 @@ class Move:
         # Junction speeds are tracked in velocity squared.
         self.max_cruise_v2 = velocity**2
         self.prev_move = None
-        self.junction_max_v2 = self.max_start_v2 = self.max_smoothed_v2 = 0.
+        self.junction_max_v2 = 0.
     def limit_speed(self, speed, accel, jerk=None):
         speed2 = speed**2
         if speed2 < self.max_cruise_v2:
@@ -244,9 +243,9 @@ class Move:
                 decel.calc_max_v2(delta_d=-peak_v2_point))
         return max(start_v2, end_v2, peak_v2)
     def calc_junction(self, prev_move):
+        self.prev_move = prev_move
         if not self.is_kinematic_move or not prev_move.is_kinematic_move:
             return
-        self.prev_move = prev_move
         # Allow extruder to calculate its maximum junction
         extruder_v2 = self.toolhead.extruder.calc_junction(prev_move, self)
         # Find max velocity using "approximated centripetal velocity"
@@ -291,13 +290,6 @@ class Move:
         self.total_decel_t = self.decel.total_accel_t
         self.cruise_t = (self.move_d
                 - self.accel.accel_d - self.decel.accel_d) / self.cruise_v
-        if self.cruise_t < -0.000000001:
-            raise error(
-                    'Logic error: impossible move ms_v2=%.3lf, mc_v2=%.3lf'
-                    ', me_v2=%.3lf with move_d=%.3lf, accel=%.3lf, decel=%.3lf'
-                    ', jerk=%.3lf' % (start_v2, cruise_v2, end_v2, self.move_d
-                        , self.accel.max_accel, self.decel.max_accel
-                        , self.accel.jerk))
         if self.accel_t:
             self.start_v = self.start_accel_v + self.effective_accel * self.accel_offset_t
         else:
@@ -306,6 +298,15 @@ class Move:
             self.end_v = self.cruise_v - self.effective_decel * (self.decel_offset_t + self.decel_t)
         else:
             self.end_v = self.start_v + self.effective_accel * self.accel_t
+        if self.cruise_t < -0.000000001:
+            raise error(
+                    'Logic error: impossible move ms_v=%.3lf, mc_v=%.3lf'
+                    ', me_v=%.3lf, accel_d = %.3lf, decel_d = %.3lf'
+                    ' with move_d=%.3lf, accel=%.3lf, decel=%.3lf'
+                    ', jerk=%.3lf' % (self.start_v, self.cruise_v, self.end_v
+                        , self.accel.accel_d, self.decel.accel_d , self.move_d
+                        , self.accel.max_accel, self.decel.max_accel
+                        , self.accel.jerk))
         if self.prev_move and abs(self.prev_move.end_v
                 - self.start_v) > 0.000000001:
             raise error('Logic error: velocity jump from %.3lf to %.3lf'
@@ -351,22 +352,21 @@ class MoveQueue:
         queue = self.queue
         if start >= len(queue):
             return
-        prev_end_v2 = queue[start].max_start_v2
-        prev_smoothed_v2 = queue[start].max_smoothed_v2
         for i in range(start, len(queue)):
             move = queue[i]
             prev_move = move.prev_move
+            prev_end_v2 = prev_move.accel.max_end_v2 if prev_move else 0.
+            prev_smoothed_v2 = (
+                    prev_move.smoothed_accel.max_end_v2 if prev_move else 0.)
             move.reset_accel_decel()
             move.accel.calc_junction(
                     prev_end_v2, move.junction_max_v2
                     , prev_move.accel if prev_move else None)
-            move.max_start_v2 = move.accel.max_start_v2
             move.smoothed_accel.calc_junction(
                     prev_smoothed_v2, move.junction_max_v2
                     , prev_move.smoothed_accel if prev_move else None)
-            move.max_smoothed_v2 = move.smoothed_accel.max_start_v2
-            prev_end_v2 = move.accel.max_end_v2
-            prev_smoothed_v2 = move.smoothed_accel.max_end_v2
+            move.smoothed_accel.max_end_v2 = min(
+                    move.smoothed_accel.max_end_v2, move.accel.max_end_v2)
     def _set_decel(self, delayed, cruise_v2):
         i = len(delayed) - 1
         while i >= 0:
@@ -394,7 +394,8 @@ class MoveQueue:
                     , delayed[-1].decel if delayed else None)
             reachable_start_v2 = move.decel.max_end_v2
             start_v2 = min(move.accel.max_start_v2, reachable_start_v2)
-            reachable_smoothed_v2 = move.smoothed_decel.max_end_v2
+            reachable_smoothed_v2 = min(
+                    move.smoothed_decel.max_end_v2, reachable_start_v2)
             smoothed_v2 = min(move.smoothed_accel.max_start_v2, reachable_smoothed_v2)
             if smoothed_v2 < reachable_smoothed_v2:
                 # It's possible for this move to accelerate

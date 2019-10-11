@@ -3,7 +3,7 @@
 # Copyright (C) 2016-2018  Kevin O'Connor <kevin@koconnor.net>
 #
 # This file may be distributed under the terms of the GNU GPLv3 license.
-import math, logging, importlib
+import copy, math, logging, importlib
 import mcu, homing, chelper, kinematics.extruder
 
 # Common suffixes: _d is distance (in mm), _v is velocity (in
@@ -61,6 +61,7 @@ class Acceleration:
         if b * 54 < c:
             # Make max_v monotonic over start_v: return the max velocity
             # which works for any start_v velocity below the threshold.
+            # Combine algorithm relies on monotonicity of max_v(start_v).
             max_v = 1.5 * (c*.5)**(1./3.)
         else:
             d = math.sqrt(c * (c + 2 * b))
@@ -94,34 +95,6 @@ class Acceleration:
         cruise_v = math.sqrt(cruise_v2)
         accel_t = self.calc_min_accel_time(start_v, cruise_v)
         return (start_v + cruise_v) * 0.5 * accel_t
-    def calc_junction(self, prev_end_v2, junction_max_v2, prev_accel):
-        # Stand-alone acceleration
-        self.max_start_v2 = min(prev_end_v2, junction_max_v2
-                , self.move.max_cruise_v2)
-        self.max_end_v2 = self.calc_max_v2()
-        if not prev_accel or not junction_max_v2 or (prev_accel.accel_order
-                != self.accel_order):
-            return
-        # TODO: check that extrude can combine (handled via junction_max_v2 now)
-        if junction_max_v2 <= max(prev_accel.max_start_v2, self.max_start_v2):
-            return
-        if prev_accel.max_accel < self.max_accel or prev_accel.jerk < self.jerk:
-            return
-        start_accel = prev_accel.start_accel
-        # Try combined acceleration
-        combined = Acceleration(self.move, self.max_accel, self.jerk)
-        start_accel = prev_accel.start_accel
-        # Make sure to not exceed junction_max_v2 during acceleration
-        combined.limit_accel((junction_max_v2 - start_accel.max_start_v2)
-                / (2 * prev_accel.combined_d))
-        combined.start_accel = start_accel
-        combined.combined_d += prev_accel.combined_d
-        combined.max_end_v2 = combined.calc_max_v2()
-        if combined.max_end_v2 + 0.000000001 >= self.max_end_v2:
-            self.max_end_v2 = combined.max_end_v2
-            self.combined_d = combined.combined_d
-            self.start_accel = start_accel
-            self.prev_accel = prev_accel
     def move_get_time(self, cmove, accel_d):
         if accel_d < 0.000000001:
             return 0.
@@ -187,6 +160,42 @@ class Acceleration:
                 break;
             a = a.prev_accel
 
+class AccelCombiner:
+    def __init__(self, max_start_v2):
+        self.reset(max_start_v2)
+    def reset(self, max_start_v2):
+        self.references = []
+        self.max_start_v2 = max_start_v2
+    def process_next_accel(self, accel, junction_max_v2):
+        refs = self.references
+        prev_accel = refs[-1][1] if refs else None
+        accel.prev_accel = prev_accel
+        accel.max_start_v2 = min(junction_max_v2, accel.move.max_cruise_v2
+                , prev_accel.max_end_v2 if prev_accel else self.max_start_v2)
+        accel.max_end_v2 = accel.calc_max_v2()
+        if not prev_accel or prev_accel.accel_order != accel.accel_order:
+            del refs[:]
+        while refs and refs[-1][0].max_start_v2 >= accel.max_start_v2:
+            del refs[-1]
+        refs.append((copy.copy(accel), accel))
+        refs[-1][0].start_accel = refs[-1][0]
+        for i in range(len(refs)-2, 0, -1):
+            a_ref, a_m = refs[i]
+            a_ref.combined_d += accel.move.move_d
+            # Make sure to not exceed junction_max_v2 during acceleration
+            # During S-Curve acceleration, the actual speed can overshoot
+            # (start_v + accel * t) by (accel * t / (6 * sqrt(3)))
+            a_ref.limit_accel(
+                    min((junction_max_v2 * (53. / 54.) - a_ref.max_start_v2) / (
+                        2 * a_ref.combined_d), accel.max_accel)
+                    , accel.jerk)
+            combined_max_end_v2 = a_ref.calc_max_v2()
+            if combined_max_end_v2 + 0.000000001 >= accel.max_end_v2:
+                accel.limit_accel(a_ref.max_accel, a_ref.jerk)
+                accel.max_end_v2 = combined_max_end_v2
+                accel.combined_d = a_ref.combined_d
+                accel.start_accel = a_m
+
 # Class to track each move request
 class Move:
     def __init__(self, toolhead, start_pos, end_pos, speed):
@@ -225,11 +234,12 @@ class Move:
         if jerk and jerk < self.max_jerk:
             self.max_jerk = jerk
     def calc_peak_v2(self, accel, decel):
-        start_v2 = accel.max_start_v2
-        end_v2 = decel.max_start_v2
+        start_v2 = accel.start_accel.max_start_v2
+        end_v2 = decel.start_accel.max_start_v2
         if self.accel.accel_order == 2:
-            accel = min(accel.max_accel, decel.max_accel)
-            return (start_v2 + end_v2 + 2 * self.move_d * accel) * 0.5
+            effective_accel = min(accel.max_accel, decel.max_accel)
+            accel_d = accel.combined_d + decel.combined_d - self.move_d
+            return (start_v2 + end_v2 + 2 * accel_d * effective_accel) * 0.5
         if end_v2 > start_v2:
             peak_v2_point = self.move_d - (accel.combined_d
                     - accel.calc_min_accel_dist(end_v2)) * 0.5
@@ -290,6 +300,7 @@ class Move:
         self.total_decel_t = self.decel.total_accel_t
         self.cruise_t = (self.move_d
                 - self.accel.accel_d - self.decel.accel_d) / self.cruise_v
+        # Only used to track smootheness, can be deleted
         if self.accel_t:
             self.start_v = self.start_accel_v + self.effective_accel * self.accel_offset_t
         else:
@@ -352,21 +363,18 @@ class MoveQueue:
         queue = self.queue
         if start >= len(queue):
             return
+        prev_move = queue[start].prev_move
+        accel_combiner = AccelCombiner(
+                prev_move.accel.max_end_v2 if prev_move else 0.)
+        smoothed_accel_combiner = AccelCombiner(
+                prev_move.smoothed_accel.max_end_v2 if prev_move else 0.)
         for i in range(start, len(queue)):
             move = queue[i]
-            prev_move = move.prev_move
-            prev_end_v2 = prev_move.accel.max_end_v2 if prev_move else 0.
-            prev_smoothed_v2 = (
-                    prev_move.smoothed_accel.max_end_v2 if prev_move else 0.)
             move.reset_accel_decel()
-            move.accel.calc_junction(
-                    prev_end_v2, move.junction_max_v2
-                    , prev_move.accel if prev_move else None)
-            move.smoothed_accel.calc_junction(
-                    prev_smoothed_v2, move.junction_max_v2
-                    , prev_move.smoothed_accel if prev_move else None)
-            move.smoothed_accel.max_end_v2 = min(
-                    move.smoothed_accel.max_end_v2, move.accel.max_end_v2)
+            accel_combiner.process_next_accel(
+                    move.accel, move.junction_max_v2)
+            smoothed_accel_combiner.process_next_accel(
+                    move.smoothed_accel, move.junction_max_v2)
     def _set_decel(self, delayed, cruise_v2):
         i = len(delayed) - 1
         while i >= 0:
@@ -382,16 +390,16 @@ class MoveQueue:
         # junction speed assuming the robot comes to a complete stop
         # after the last move.
         delayed = []
-        junction_max_v2 = next_end_v2 = next_smoothed_v2 = peak_cruise_v2 = 0.
+        junction_max_v2 = peak_cruise_v2 = 0.
         i = flush_count - 1
+        decel_combiner = AccelCombiner(0.)
+        decel_smoothed_combiner = AccelCombiner(0.)
         while i >= limit:
             move = queue[i]
-            move.smoothed_decel.calc_junction(
-                    next_smoothed_v2, junction_max_v2
-                    , delayed[-1].smoothed_decel if delayed else None)
-            move.decel.calc_junction(
-                    next_end_v2, junction_max_v2
-                    , delayed[-1].decel if delayed else None)
+            decel_combiner.process_next_accel(
+                    move.decel, junction_max_v2)
+            decel_smoothed_combiner.process_next_accel(
+                    move.smoothed_decel, junction_max_v2)
             reachable_start_v2 = move.decel.max_end_v2
             start_v2 = min(move.accel.max_start_v2, reachable_start_v2)
             reachable_smoothed_v2 = min(
@@ -417,13 +425,11 @@ class MoveQueue:
                     move.accel.set_junction(cruise_v2)
                 del delayed[:]
                 i = queue.index(move.accel.start_accel.move)
-                next_end_v2 = queue[i].accel.max_start_v2
-                next_smoothed_v2 = queue[i].smoothed_accel.max_start_v2
+                decel_combiner.reset(queue[i].accel.max_start_v2)
+                decel_smoothed_combiner.reset(queue[i].smoothed_accel.max_start_v2)
             else:
                 # Delay calculating this move until peak_cruise_v2 is known
                 delayed.append(move)
-                next_end_v2 = start_v2
-                next_smoothed_v2 = smoothed_v2
             junction_max_v2 = queue[i].junction_max_v2
             i -= 1
         if update_flush_count:

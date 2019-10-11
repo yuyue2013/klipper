@@ -38,9 +38,13 @@ class Acceleration:
             self.jerk = jerk
         self.min_accel = min(self.max_accel
                 , self.jerk * self.min_jerk_limit_time / 6.)
-    def calc_max_v2(self, start_v2=None, delta_d=0.):
+    def set_max_start_v2(self, max_start_v2):
+        self.max_start_v2 = max_start_v2
+        self.max_start_v = math.sqrt(max_start_v2)
+    def calc_max_v2(self, delta_d=0.):
         dist = self.combined_d + delta_d
-        start_v2 = start_v2 or self.start_accel.max_start_v2
+        start_v2 = self.start_accel.max_start_v2
+        start_v = self.start_accel.max_start_v
         # Check if accel is the limiting factor
         max_accel_v2 = start_v2 + 2.0 * dist * self.max_accel
         if self.accel_order == 2:
@@ -54,7 +58,6 @@ class Acceleration:
         # (max_v^2 - start_v^2) * (max_v + start_v) / 2 ==
         #     dist^2 * jerk / 3
         # which is solved using Cardano's formula.
-        start_v = math.sqrt(start_v2)
         a = 2./3. * start_v
         b = a*a*a
         c = dist * dist * self.jerk / 3.
@@ -91,7 +94,7 @@ class Acceleration:
         if cruise_v2 <= start_v2: return 0.
         if self.accel_order == 2:
             return (cruise_v2 - start_v2) * 0.5 / self.max_accel
-        start_v = math.sqrt(start_v2)
+        start_v = self.start_accel.max_start_v
         cruise_v = math.sqrt(cruise_v2)
         accel_t = self.calc_min_accel_time(start_v, cruise_v)
         return (start_v + cruise_v) * 0.5 * accel_t
@@ -119,7 +122,7 @@ class Acceleration:
     def set_junction(self, cruise_v2, time_offset_from_start=True):
         combined = self
         start_accel_v2 = combined.start_accel.max_start_v2
-        start_accel_v = math.sqrt(start_accel_v2)
+        start_accel_v = combined.start_accel.max_start_v
         cruise_v = math.sqrt(cruise_v2)
         avg_v = (cruise_v + start_accel_v) * 0.5
         combined_accel_t = combined.calc_min_accel_time(start_accel_v, cruise_v)
@@ -170,8 +173,8 @@ class AccelCombiner:
         refs = self.references
         prev_accel = refs[-1][1] if refs else None
         accel.prev_accel = prev_accel
-        accel.max_start_v2 = min(junction_max_v2, accel.move.max_cruise_v2
-                , prev_accel.max_end_v2 if prev_accel else self.max_start_v2)
+        accel.set_max_start_v2(min(junction_max_v2, accel.move.max_cruise_v2
+            , prev_accel.max_end_v2 if prev_accel else self.max_start_v2))
         accel.max_end_v2 = accel.calc_max_v2()
         if not prev_accel or prev_accel.accel_order != accel.accel_order:
             del refs[:]

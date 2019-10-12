@@ -13,6 +13,8 @@ import mcu, homing, chelper, kinematics.extruder
 class error(Exception):
     pass
 
+EPSILON = 0.000000001
+
 class Acceleration:
     def __init__(self, move, accel, jerk=None):
         toolhead = move.toolhead
@@ -69,7 +71,7 @@ class Acceleration:
         else:
             d = math.sqrt(c * (c + 2 * b))
             e = (b + c + d)**(1./3.)
-            if e < 0.000000001:
+            if e < EPSILON:
                 return start_v
             max_v = e + a*a / e - start_v / 3.
         return max(min(max_v * max_v, max_accel_v2)
@@ -99,38 +101,30 @@ class Acceleration:
         accel_t = self.calc_min_accel_time(start_v, cruise_v)
         return (start_v + cruise_v) * 0.5 * accel_t
     def move_get_time(self, cmove, accel_d):
-        if accel_d < 0.000000001:
-            return 0.
+        if accel_d < EPSILON: return 0.
         return self.ffi_lib.move_get_time(cmove, accel_d)
-    def set_cruise_v(self, cruise_v, combined_accel_d):
-        remaining_accel_d = self.combined_d
-        accel = self
-        while combined_accel_d <= (
-                remaining_accel_d - accel.move.move_d + 0.000000001):
-            # This move can only cruise
-            accel.move.cruise_v = cruise_v
-            remaining_accel_d -= accel.move.move_d
-            if accel == self.start_accel: break
-            accel = accel.prev_accel
-        a = accel
+    def get_accel_list(self):
+        accel_list = []
+        a = self
         while True:
-            # Set cruise_v to simplify S-Curve setup, cruise_t is 0
-            a.move.cruise_v = cruise_v
+            accel_list.append(a)
             if a == self.start_accel: break
             a = a.prev_accel
-        return accel, remaining_accel_d
+        return reversed(accel_list)
     def set_junction(self, cruise_v2, time_offset_from_start=True):
         combined = self
+        if combined.start_accel.max_start_v2 > cruise_v2:
+            combined.start_accel.set_max_start_v2(cruise_v2)
         start_accel_v2 = combined.start_accel.max_start_v2
         start_accel_v = combined.start_accel.max_start_v
         cruise_v = math.sqrt(cruise_v2)
         avg_v = (cruise_v + start_accel_v) * 0.5
         combined_accel_t = combined.calc_min_accel_time(start_accel_v, cruise_v)
         combined_accel_d = avg_v * combined_accel_t
-        a, remaining_accel_d = combined.set_cruise_v(cruise_v, combined_accel_d)
-        if start_accel_v2 + 0.000000001 >= cruise_v2:
-            combined.set_max_start_v2(cruise_v2)
-            return
+        if combined_accel_d > combined.combined_d + EPSILON:
+            raise error(
+                    'Logic error: need %.6lf to accelerate, only %.6lf combined'
+                    % (combined_accel_d, combined.combined_d))
         effective_accel = combined.calc_effective_accel(
                 start_accel_v, cruise_v)
         cmove = combined.move.cmove
@@ -143,26 +137,25 @@ class Acceleration:
             0., 1., 0.,
             start_accel_v, cruise_v, effective_accel, 0.)
         remaining_accel_t = combined_accel_t
-        while True:
+        remaining_accel_d = combined_accel_d
+        accel_list = self.get_accel_list()
+        for a in accel_list:
+            a.move.cruise_v = cruise_v
+            if remaining_accel_d <= 0: continue
             a.effective_accel = effective_accel
             a.total_accel_t = combined_accel_t
-            # The first move can have limited length
-            a.accel_d = min(
-                    a.move.move_d + (combined_accel_d - remaining_accel_d), a.move.move_d)
-            remaining_accel_d -= a.move.move_d
+            a.accel_d = min(a.move.move_d, remaining_accel_d)
             a.start_accel_v = start_accel_v
             if time_offset_from_start:
-                a.accel_offset_t = combined.move_get_time(
-                        cmove, remaining_accel_d)
-                a.accel_t = remaining_accel_t - a.accel_offset_t
-            else:
                 a.accel_offset_t = combined_accel_t - remaining_accel_t
-                a.accel_t = remaining_accel_t - combined.move_get_time(
-                        cmove, remaining_accel_d)
+                a.accel_t = combined.move_get_time(cmove, a.accel_d +
+                        combined_accel_d - remaining_accel_d) - a.accel_offset_t
+            else:
+                a.accel_offset_t = combined_accel_t - combined.move_get_time(
+                        cmove, combined_accel_d - remaining_accel_d + a.accel_d)
+                a.accel_t = remaining_accel_t - a.accel_offset_t
             remaining_accel_t -= a.accel_t
-            if a == combined.start_accel:
-                break;
-            a = a.prev_accel
+            remaining_accel_d -= a.move.move_d
 
 class AccelCombiner:
     def __init__(self, max_start_v2):
@@ -180,12 +173,11 @@ class AccelCombiner:
         if not prev_accel or prev_accel.accel_order != accel.accel_order:
             del refs[:]
         while refs and refs[-1][0].max_start_v2 >= accel.max_start_v2:
-            del refs[-1]
+            refs.pop()
         refs.append((copy.copy(accel), accel))
         refs[-1][0].start_accel = refs[-1][0]
-        for i in range(len(refs)-2, 0, -1):
+        for i in range(len(refs)-2, -1, -1):
             a_ref, a_m = refs[i]
-            a_ref.combined_d += accel.move.move_d
             # Make sure to not exceed junction_max_v2 during acceleration
             # During S-Curve acceleration, the actual speed can overshoot
             # (start_v + accel * t) by (accel * t / (6 * sqrt(3)))
@@ -193,8 +185,9 @@ class AccelCombiner:
                     min((junction_max_v2 * (53. / 54.) - a_ref.max_start_v2) / (
                         2 * a_ref.combined_d), accel.max_accel)
                     , accel.jerk)
+            a_ref.combined_d += accel.move.move_d
             combined_max_end_v2 = a_ref.calc_max_v2()
-            if combined_max_end_v2 + 0.000000001 >= accel.max_end_v2:
+            if combined_max_end_v2 + EPSILON >= accel.max_end_v2:
                 accel.limit_accel(a_ref.max_accel, a_ref.jerk)
                 accel.max_end_v2 = combined_max_end_v2
                 accel.combined_d = a_ref.combined_d
@@ -238,12 +231,13 @@ class Move:
         if jerk and jerk < self.max_jerk:
             self.max_jerk = jerk
     def calc_peak_v2(self, accel, decel):
+        if self.accel.accel_order == 2:
+            reachable_start_v2 = decel.max_end_v2
+            start_v2 = min(accel.max_start_v2, reachable_start_v2)
+            peak_v2 = (start_v2 + reachable_start_v2) * .5
+            return peak_v2
         start_v2 = accel.start_accel.max_start_v2
         end_v2 = decel.start_accel.max_start_v2
-        if self.accel.accel_order == 2:
-            effective_accel = min(accel.max_accel, decel.max_accel)
-            accel_d = accel.combined_d + decel.combined_d - self.move_d
-            return (start_v2 + end_v2 + 2 * accel_d * effective_accel) * 0.5
         if end_v2 > start_v2:
             peak_v2_point = self.move_d - (accel.combined_d
                     - accel.calc_min_accel_dist(end_v2)) * 0.5
@@ -313,7 +307,7 @@ class Move:
             self.end_v = self.cruise_v - self.effective_decel * (self.decel_offset_t + self.decel_t)
         else:
             self.end_v = self.start_v + self.effective_accel * self.accel_t
-        if self.cruise_t < -0.000000001:
+        if self.cruise_t < -EPSILON:
             raise error(
                     'Logic error: impossible move ms_v=%.3lf, mc_v=%.3lf'
                     ', me_v=%.3lf, accel_d = %.3lf, decel_d = %.3lf'
@@ -323,8 +317,8 @@ class Move:
                         , self.accel.max_accel, self.decel.max_accel
                         , self.accel.jerk))
         if self.prev_move and abs(self.prev_move.end_v
-                - self.start_v) > 0.000000001:
-            raise error('Logic error: velocity jump from %.3lf to %.3lf'
+                - self.start_v) > 0.0001:
+            raise error('Logic error: velocity jump from %.6lf to %.6lf'
                     % (self.prev_move.end_v, self.start_v))
         self.prev_move = None
         # Generate step times for the move

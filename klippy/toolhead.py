@@ -128,7 +128,8 @@ class Acceleration:
         combined_accel_t = combined.calc_min_accel_time(start_accel_v, cruise_v)
         combined_accel_d = avg_v * combined_accel_t
         a, remaining_accel_d = combined.set_cruise_v(cruise_v, combined_accel_d)
-        if start_accel_v2 >= cruise_v2:
+        if start_accel_v2 + 0.000000001 >= cruise_v2:
+            combined.set_max_start_v2(cruise_v2)
             return
         effective_accel = combined.calc_effective_accel(
                 start_accel_v, cruise_v)

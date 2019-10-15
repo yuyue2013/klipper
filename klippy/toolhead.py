@@ -167,7 +167,8 @@ class AccelCombiner:
         refs = self.references
         prev_accel = refs[-1][1] if refs else None
         accel.prev_accel = prev_accel
-        accel.set_max_start_v2(min(junction_max_v2, accel.move.max_cruise_v2
+        max_cruise_v2 = accel.move.max_cruise_v2
+        accel.set_max_start_v2(min(junction_max_v2, max_cruise_v2
             , prev_accel.max_end_v2 if prev_accel else self.max_start_v2))
         accel.max_end_v2 = accel.calc_max_v2()
         if not prev_accel or prev_accel.accel_order != accel.accel_order:
@@ -192,6 +193,12 @@ class AccelCombiner:
                 accel.max_end_v2 = combined_max_end_v2
                 accel.combined_d = a_ref.combined_d
                 accel.start_accel = a_m
+            # Also make sure to not exceed max_cruise_v2 by the end of the
+            # combined_d acceleration combined so far.
+            a_ref.limit_accel(
+                    min((max_cruise_v2 * (53. / 54.) - a_ref.max_start_v2) / (
+                        2 * a_ref.combined_d), accel.max_accel)
+                    , accel.jerk)
 
 # Class to track each move request
 class Move:

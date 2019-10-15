@@ -37,7 +37,7 @@ move_set_accel_order(struct move *m, int accel_order)
 static inline double
 max_accel_comp(double accel_comp, double accel_t)
 {
-    return fmin(accel_comp, 10. * accel_t * accel_t);
+    return fmin(accel_comp, accel_t * accel_t);
 }
 
 // Determine the coefficients for a 4th order bezier position function

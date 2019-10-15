@@ -231,25 +231,24 @@ class Move:
         if jerk and jerk < self.max_jerk:
             self.max_jerk = jerk
     def calc_peak_v2(self, accel, decel):
-        if self.accel.accel_order == 2:
+        if accel.accel_order == 2:
             reachable_start_v2 = decel.max_end_v2
             start_v2 = min(accel.max_start_v2, reachable_start_v2)
             peak_v2 = (start_v2 + reachable_start_v2) * .5
             return peak_v2
-        start_v2 = accel.start_accel.max_start_v2
-        end_v2 = decel.start_accel.max_start_v2
-        if end_v2 > start_v2:
-            peak_v2_point = self.move_d - (accel.combined_d
-                    - accel.calc_min_accel_dist(end_v2)) * 0.5
-        elif start_v2 > end_v2:
-            peak_v2_point = (decel.combined_d
-                    - decel.calc_min_accel_dist(start_v2)) * 0.5
-        else:
-            peak_v2_point = self.move_d * 0.5
-        peak_v2 = min(
-                accel.calc_max_v2(delta_d=-(self.move_d-peak_v2_point)),
-                decel.calc_max_v2(delta_d=-peak_v2_point))
-        return max(start_v2, end_v2, peak_v2)
+        total_d = accel.combined_d + decel.combined_d - self.move_d
+        high_v2 = max(accel.max_end_v2, decel.max_end_v2)
+        low_v2 = 0
+        while high_v2 - low_v2 > EPSILON:
+            guess_v2 = (high_v2 + low_v2) * 0.5
+            accel_d = accel.calc_min_accel_dist(guess_v2)
+            decel_d = decel.calc_min_accel_dist(guess_v2)
+            if accel_d <= accel.combined_d and decel_d <= decel.combined_d and (
+                    accel_d + decel_d <= total_d):
+                low_v2 = guess_v2
+            else:
+                high_v2 = guess_v2
+        return low_v2
     def calc_junction(self, prev_move):
         self.prev_move = prev_move
         if not self.is_kinematic_move or not prev_move.is_kinematic_move:

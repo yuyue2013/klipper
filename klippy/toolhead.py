@@ -132,7 +132,7 @@ class Acceleration:
             0., 0., 0.,
             0., 0., 0.,
             0., 1., 0.,
-            start_accel_v, cruise_v, effective_accel, 0.)
+            start_accel_v, cruise_v, effective_accel, 0., 0.)
         remaining_accel_t = combined_accel_t
         remaining_accel_d = combined_accel_d
         accel_list = self.get_accel_list()

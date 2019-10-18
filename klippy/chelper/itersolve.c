@@ -34,6 +34,12 @@ move_set_accel_order(struct move *m, int accel_order)
     m->accel_order = accel_order;
 }
 
+static inline double
+max_accel_comp(double accel_comp, double accel_t)
+{
+    return fmin(accel_comp, accel_t * accel_t);
+}
+
 static void
 move_fill_bezier2(struct move_accel *ma, double start_accel_v
                   , double effective_accel, double accel_offset_t)
@@ -47,7 +53,8 @@ move_fill_bezier2(struct move_accel *ma, double start_accel_v
 // Determine the coefficients for a 4th order bezier position function
 static void
 move_fill_bezier4(struct move_accel *ma, double start_accel_v
-        , double effective_accel, double total_accel_t, double accel_offset_t)
+        , double effective_accel, double total_accel_t, double accel_offset_t
+        , double accel_comp)
 {
     ma->offset_t = accel_offset_t;
     if (!total_accel_t) {
@@ -59,7 +66,8 @@ move_fill_bezier4(struct move_accel *ma, double start_accel_v
     double accel_div_accel_t2 = accel_div_accel_t * inv_accel_t;
     ma->c4 = -.5 * accel_div_accel_t2;
     ma->c3 = accel_div_accel_t;
-    ma->c1 = start_accel_v;
+    ma->c2 = -6. * accel_div_accel_t2 * accel_comp;
+    ma->c1 = start_accel_v + 6. * accel_div_accel_t * accel_comp;
     ma->c0 = 0;
     ma->c0 = -move_eval_accel(ma, 0);
 }
@@ -67,7 +75,8 @@ move_fill_bezier4(struct move_accel *ma, double start_accel_v
 // Determine the coefficients for a 6th order bezier position function
 static void
 move_fill_bezier6(struct move_accel *ma, double start_accel_v
-        , double effective_accel, double total_accel_t, double accel_offset_t)
+        , double effective_accel, double total_accel_t, double accel_offset_t
+        , double accel_comp)
 {
     ma->offset_t = accel_offset_t;
     if (!total_accel_t) {
@@ -80,7 +89,9 @@ move_fill_bezier6(struct move_accel *ma, double start_accel_v
     double accel_div_accel_t4 = accel_div_accel_t3 * inv_accel_t;
     ma->c6 = accel_div_accel_t4;
     ma->c5 = -3. * accel_div_accel_t3;
-    ma->c4 = 2.5 * accel_div_accel_t2;
+    ma->c4 = 2.5 * accel_div_accel_t2 + 30. * accel_div_accel_t4 * accel_comp;
+    ma->c3 = -60. * accel_div_accel_t3 * accel_comp;
+    ma->c2 = 30. * accel_div_accel_t2 * accel_comp;
     ma->c1 = start_accel_v;
     ma->c0 = 0;
     ma->c0 = -move_eval_accel(ma, 0);
@@ -95,7 +106,7 @@ move_fill(struct move *m, double print_time
           , double start_pos_x, double start_pos_y, double start_pos_z
           , double axes_d_x, double axes_d_y, double axes_d_z
           , double start_accel_v, double cruise_v
-          , double effective_accel, double effective_decel)
+          , double effective_accel, double effective_decel, double accel_comp)
 {
     // Setup velocity trapezoid
     m->print_time = print_time;
@@ -107,14 +118,18 @@ move_fill(struct move *m, double print_time
     m->cruise_v = cruise_v;
     if (m->accel_order == 4) {
         move_fill_bezier4(&m->accel, start_accel_v, effective_accel
-                , total_accel_t, accel_offset_t);
+                , total_accel_t, accel_offset_t
+                , max_accel_comp(accel_comp, accel_t));
         move_fill_bezier4(&m->decel, cruise_v, -effective_decel
-                , total_decel_t, decel_offset_t);
+                , total_decel_t, decel_offset_t
+                , max_accel_comp(accel_comp, decel_t));
     } else if (m->accel_order == 6) {
         move_fill_bezier6(&m->accel, start_accel_v, effective_accel
-                , total_accel_t, accel_offset_t);
+                , total_accel_t, accel_offset_t
+                , max_accel_comp(accel_comp, accel_t));
         move_fill_bezier6(&m->decel, cruise_v, -effective_decel
-                , total_decel_t, decel_offset_t);
+                , total_decel_t, decel_offset_t
+                , max_accel_comp(accel_comp, decel_t));
     } else {
         move_fill_bezier2(&m->accel, start_accel_v, effective_accel
                 , accel_offset_t);
@@ -308,7 +323,7 @@ itersolve_calc_position_from_coord(struct stepper_kinematics *sk
     struct move m;
     memset(&m, 0, sizeof(m));
     move_fill(&m, 0., 0., 0., 0., 1., 0., 0., 0., x, y, z, 0., 1., 0., 0., 1.
-            , 0., 0.);
+            , 0., 0., 0.);
     return sk->calc_position(sk, &m, 0.);
 }
 

@@ -60,7 +60,7 @@ will most likely list
 Check out the new branch:
 ```
 $ git fetch s-curve-exp
-$ git checkout s-curve-exp/scurve-jerk-limit
+$ git checkout s-curve-exp/scurve-combined
 ```
 
 Add `acceleration_order` paramter to your `printer.cfg`
@@ -360,12 +360,3 @@ S-Curve acceleration notes
    slicers will generate mostly connected lines at the top, bottom and infill,
    preventing toolhead from stopping for most of the moves. This has the most
    positive effect if `square_corner_velocity` is set reasonably high.
- * S-Curve acceleration does not work well with `[bed_meshing]` feature
-   currently. As mentioned above, S-Curve acceleration slows down short moves.
-   Incidentally, bed meshing segments long moves into short ones to account for
-   the bed surface height changes. This can lead to inconsistent acceleration
-   across the print area depending on segmentation density. If you must use bed
-   meshing, you can set fade_start < fade_end options in `[bed_meshing]` section
-   to small values (i.e. a few millimeters) to stop Z-height adjustments early
-   and set `max_jerk` to a reasonably high value (around 50000 or more) to make
-   sure the print is not too slow during these initial few millimeters.

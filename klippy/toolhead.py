@@ -125,14 +125,16 @@ class Acceleration:
         effective_accel = combined.calc_effective_accel(
                 start_accel_v, cruise_v)
         cmove = combined.move.cmove
-        self.move.toolhead.move_fill(
+        toolhead = self.move.toolhead
+        toolhead.move_fill(
             cmove, 0.,
             combined_accel_t, 0., combined_accel_t,
             0.,
             0., 0., 0.,
             0., 0., 0.,
             0., 1., 0.,
-            start_accel_v, cruise_v, effective_accel, 0., 0.)
+            start_accel_v, cruise_v, effective_accel, 0.,
+            toolhead.accel_compensation)
         remaining_accel_t = combined_accel_t
         remaining_accel_d = combined_accel_d
         accel_list = self.get_accel_list()

@@ -119,17 +119,17 @@ move_fill(struct move *m, double print_time
     if (m->accel_order == 4) {
         move_fill_bezier4(&m->accel, start_accel_v, effective_accel
                 , total_accel_t, accel_offset_t
-                , max_accel_comp(accel_comp, accel_t));
+                , max_accel_comp(accel_comp, total_accel_t));
         move_fill_bezier4(&m->decel, cruise_v, -effective_decel
                 , total_decel_t, decel_offset_t
-                , max_accel_comp(accel_comp, decel_t));
+                , max_accel_comp(accel_comp, total_decel_t));
     } else if (m->accel_order == 6) {
         move_fill_bezier6(&m->accel, start_accel_v, effective_accel
                 , total_accel_t, accel_offset_t
-                , max_accel_comp(accel_comp, accel_t));
+                , max_accel_comp(accel_comp, total_accel_t));
         move_fill_bezier6(&m->decel, cruise_v, -effective_decel
                 , total_decel_t, decel_offset_t
-                , max_accel_comp(accel_comp, decel_t));
+                , max_accel_comp(accel_comp, total_decel_t));
     } else {
         move_fill_bezier2(&m->accel, start_accel_v, effective_accel
                 , accel_offset_t);

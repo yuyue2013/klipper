@@ -125,16 +125,14 @@ class Acceleration:
         effective_accel = combined.calc_effective_accel(
                 start_accel_v, cruise_v)
         cmove = combined.move.cmove
-        toolhead = self.move.toolhead
-        toolhead.move_fill(
+        self.move.toolhead.move_fill(
             cmove, 0.,
             combined_accel_t, 0., combined_accel_t,
             0.,
             0., 0., 0.,
             0., 0., 0.,
             0., 1., 0.,
-            start_accel_v, cruise_v, effective_accel, 0.,
-            toolhead.accel_compensation)
+            start_accel_v, cruise_v, effective_accel, 0.)
         remaining_accel_t = combined_accel_t
         remaining_accel_d = combined_accel_d
         accel_list = self.get_accel_list()
@@ -352,8 +350,7 @@ class Move:
                 self.start_pos[0], self.start_pos[1], self.start_pos[2],
                 self.axes_d[0], self.axes_d[1], self.axes_d[2],
                 self.start_accel_v, self.cruise_v,
-                self.effective_accel, self.effective_decel,
-                self.toolhead.accel_compensation)
+                self.effective_accel, self.effective_decel)
             self.toolhead.kin.move(next_move_time, self)
         if self.axes_d[3]:
             self.toolhead.extruder.move(next_move_time, self)
@@ -576,7 +573,6 @@ class DripModeEndSignal(Exception):
     pass
 
 RINGING_REDUCTION_FACTOR = 10.
-MAX_ACCEL_COMPENSATION = 0.005
 
 # Main code to track events (and their timing) on the printer toolhead
 class ToolHead:
@@ -610,10 +606,9 @@ class ToolHead:
             'square_corner_velocity', 5., minval=0.)
         self.config_max_velocity = self.max_velocity
         self.config_max_accel = self.max_accel
+        self.config_max_jerk = self.max_jerk
         self.config_square_corner_velocity = self.square_corner_velocity
         self.junction_deviation = 0.
-        self.accel_compensation = config.getfloat(
-            'accel_compensation', 0., minval=0., maxval=MAX_ACCEL_COMPENSATION)
         self._calc_junction_deviation()
         # Print time tracking
         self.buffer_time_low = config.getfloat(
@@ -902,7 +897,7 @@ class ToolHead:
         max_velocity = gcode.get_float('VELOCITY', params, self.max_velocity,
                                        above=0.)
         max_accel = gcode.get_float('ACCEL', params, self.max_accel, above=0.)
-        self.max_jerk = gcode.get_float('JERK', params, self.max_jerk, above=0.)
+        max_jerk = gcode.get_float('JERK', params, self.max_jerk, above=0.)
         square_corner_velocity = gcode.get_float(
             'SQUARE_CORNER_VELOCITY', params, self.square_corner_velocity,
             minval=0.)
@@ -917,20 +912,16 @@ class ToolHead:
             self.accel_order = accel_order
             self.ffi_lib.move_set_accel_order(self.cmove, accel_order)
             self.extruder.setup_accel_order(accel_order)
-        self.accel_compensation = gcode.get_float(
-            'ACCEL_COMPENSATION', params, self.accel_compensation, minval=0.
-            , maxval=MAX_ACCEL_COMPENSATION)
         self.max_velocity = min(max_velocity, self.config_max_velocity)
         self.max_accel = min(max_accel, self.config_max_accel)
+        self.max_jerk = min(max_jerk, self.config_max_jerk)
         self.square_corner_velocity = min(square_corner_velocity,
                                           self.config_square_corner_velocity)
         self._calc_junction_deviation()
         msg = ("max_velocity: %.6f max_accel: %.6f max_accel_to_decel: %.6f\n"
-               "max_jerk: %.6f accel_order: %d square_corner_velocity: %.6f\n"
-               "accel_compensation: %.8f\n"% (
+               "max_jerk: %.6f accel_order: %d square_corner_velocity: %.6f"% (
                    self.max_velocity, self.max_accel, self.max_accel_to_decel,
-                   self.max_jerk, accel_order, self.square_corner_velocity,
-                   self.accel_compensation))
+                   self.max_jerk, accel_order, self.square_corner_velocity))
         self.printer.set_rollover_info("toolhead", "toolhead: %s" % (msg,))
         gcode.respond_info(msg, log=False)
     def cmd_M204(self, params):

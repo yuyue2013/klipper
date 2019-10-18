@@ -31,8 +31,7 @@ void move_fill(struct move *m, double print_time
                , double start_pos_x, double start_pos_y, double start_pos_z
                , double axes_d_x, double axes_d_y, double axes_d_z
                , double start_accel_v, double cruise_v
-               , double accel, double decel
-               , double accel_comp);
+               , double accel, double decel);
 double move_get_distance(struct move *m, double move_time);
 struct coord move_get_coord(struct move *m, double move_time);
 double move_get_time(struct move *m, double move_distance);

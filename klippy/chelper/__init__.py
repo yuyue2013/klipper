@@ -52,8 +52,7 @@ defs_itersolve = """
         , double start_pos_x, double start_pos_y, double start_pos_z
         , double axes_d_x, double axes_d_y, double axes_d_z
         , double start_accel_v, double cruise_v
-        , double effective_accel, double effective_decel
-        , double accel_comp);
+        , double effective_accel, double effective_decel);
     double move_get_time(struct move *m, double distance);
     int32_t itersolve_gen_steps(struct stepper_kinematics *sk, struct move *m);
     void itersolve_set_stepcompress(struct stepper_kinematics *sk

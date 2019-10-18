@@ -68,9 +68,8 @@ class ForceMove:
         prev_sk = stepper.set_stepper_kinematics(self.stepper_kinematics)
         stepper.set_position((0., 0., 0.))
         accel_t, cruise_t, cruise_v = calc_move_time(dist, speed, accel)
-        self.move_fill(self.cmove, print_time, accel_t, 0., accel_t, cruise_t,
-                       accel_t, 0., accel_t, 0., 0., 0., dist, 0., 0.,
-                       0., cruise_v, accel, accel, 0.)
+        self.move_fill(self.cmove, print_time, accel_t, cruise_t, accel_t,
+                       0., 0., 0., dist, 0., 0., 0., cruise_v, accel, accel)
         stepper.step_itersolve(self.cmove)
         stepper.set_stepper_kinematics(prev_sk)
         toolhead.dwell(accel_t + cruise_t + accel_t)

@@ -171,7 +171,7 @@ class AccelCombiner:
         return accel_t + cruise_t + accel.min_start_time
     def process_next_accel(self, accel, junction_max_v2):
         refs = self.references
-        prev_accel = refs[-1][1] if refs else None
+        prev_accel = refs[-1].move_accel if refs else None
         accel.prev_accel = prev_accel
         max_cruise_v2 = accel.move.max_cruise_v2
         accel.set_max_start_v2(min(junction_max_v2, max_cruise_v2
@@ -186,37 +186,39 @@ class AccelCombiner:
                 or accel.accel_order == 2):
             del refs[:]
         junction_accel_limit_v2 = junction_max_v2 * (53. / 54.)
-        while refs and refs[-1][0].max_start_v2 >= min(accel.max_start_v2
-                , junction_accel_limit_v2):
+        while refs and refs[-1].max_start_v2 + EPSILON >= min(
+                accel.max_start_v2 , junction_accel_limit_v2):
             refs.pop()
-        refs.append((copy.copy(accel), accel))
-        refs[-1][0].start_accel = refs[-1][0]
+        a_copy = copy.copy(accel)
+        refs.append(a_copy)
+        a_copy.start_accel = a_copy
+        a_copy.move_accel = accel
         for i in range(len(refs)-2, -1, -1):
-            a_ref, a_m = refs[i]
+            start_accel = refs[i]
             # Make sure to not exceed junction_max_v2 during acceleration
             # During S-Curve acceleration, the actual speed can overshoot
             # (start_v + accel * t) by (accel * t / (6 * sqrt(3)))
-            a_ref.limit_accel(
-                    min((junction_accel_limit_v2 - a_ref.max_start_v2) / (
-                        2 * a_ref.combined_d), accel.max_accel)
+            start_accel.limit_accel(
+                    min((junction_accel_limit_v2 - start_accel.max_start_v2) / (
+                        2. * start_accel.combined_d), accel.max_accel)
                     , accel.jerk)
-            a_ref.combined_d += accel.move.move_d
+            start_accel.combined_d += accel.move.move_d
 
-            combined_max_end_v2 = a_ref.calc_max_v2()
-            combined_min_end_time = self.calc_min_accel_end_time(a_ref
-                    , min(combined_max_end_v2, max_cruise_v2))
+            combined_max_end_v2 = start_accel.calc_max_v2()
+            combined_min_end_time = self.calc_min_accel_end_time(
+                    start_accel, min(combined_max_end_v2, max_cruise_v2))
             if combined_min_end_time + EPSILON < accel.min_end_time:
-                accel.limit_accel(a_ref.max_accel, a_ref.jerk)
+                accel.limit_accel(start_accel.max_accel, start_accel.jerk)
                 accel.max_end_v2 = combined_max_end_v2
                 accel.min_end_time = combined_min_end_time
-                accel.combined_d = a_ref.combined_d
-                accel.start_accel = a_m
+                accel.combined_d = start_accel.combined_d
+                # Point to the unmodified Acceleration instance.
+                accel.start_accel = start_accel.move_accel
             # Also make sure to not exceed max_cruise_v2 by the end of the
             # combined_d acceleration combined so far.
-            a_ref.limit_accel(
-                    min((max_cruise_v2 * (53. / 54.) - a_ref.max_start_v2) / (
-                        2 * a_ref.combined_d), accel.max_accel)
-                    , accel.jerk)
+            start_accel.limit_accel((
+                max_cruise_v2 * (53. / 54.) - start_accel.max_start_v2) / (
+                    2. * start_accel.combined_d), accel.jerk)
 
 # Class to track each move request
 class Move:

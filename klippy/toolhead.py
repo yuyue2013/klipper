@@ -124,9 +124,9 @@ class Acceleration:
                     % (combined_accel_d, combined.combined_d))
         effective_accel = combined.calc_effective_accel(
                 start_accel_v, cruise_v)
-        cmove = combined.move.cmove
-        toolhead = self.move.toolhead
-        toolhead.move_fill(
+        move = combined.move
+        cmove = move.cmove
+        move.toolhead.move_fill(
             cmove, 0.,
             combined_accel_t, 0., combined_accel_t,
             0.,
@@ -134,7 +134,7 @@ class Acceleration:
             0., 0., 0.,
             0., 1., 0.,
             start_accel_v, cruise_v, effective_accel, 0.,
-            toolhead.accel_compensation)
+            move.accel_compensation)
         remaining_accel_t = combined_accel_t
         remaining_accel_d = combined_accel_d
         accel_list = self.get_accel_list()
@@ -184,8 +184,11 @@ class AccelCombiner:
         accel.max_end_v2 = accel.calc_max_v2()
         accel.min_end_time = self.calc_min_accel_end_time(accel
                 , min(accel.max_end_v2, max_cruise_v2))
-        if (not prev_accel or prev_accel.accel_order != accel.accel_order
-                or accel.accel_order == 2):
+        if (not prev_accel or accel.accel_order == 2
+                or prev_accel.accel_order != accel.accel_order
+                or prev_accel.move.accel_compensation
+                    != accel.move.accel_compensation):
+            # Cannot combine the current move with the previous ones.
             del refs[:]
         junction_accel_limit_v2 = junction_max_v2 * (53. / 54.)
         while refs and refs[-1][0].max_start_v2 >= min(accel.max_start_v2
@@ -234,6 +237,7 @@ class Move:
         self.max_accel = toolhead.max_accel
         self.max_accel_to_decel = toolhead.max_accel_to_decel
         self.max_jerk = toolhead.max_jerk
+        self.accel_compensation = toolhead.accel_compensation
         if move_d < .000000001:
             # Extrude only move
             self.end_pos = (start_pos[0], start_pos[1], start_pos[2],
@@ -353,7 +357,7 @@ class Move:
                 self.axes_d[0], self.axes_d[1], self.axes_d[2],
                 self.start_accel_v, self.cruise_v,
                 self.effective_accel, self.effective_decel,
-                self.toolhead.accel_compensation)
+                self.accel_compensation)
             self.toolhead.kin.move(next_move_time, self)
         if self.axes_d[3]:
             self.toolhead.extruder.move(next_move_time, self)

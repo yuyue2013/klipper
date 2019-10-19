@@ -37,7 +37,8 @@ move_set_accel_order(struct move *m, int accel_order)
 static inline double
 max_accel_comp(double accel_comp, double accel_t)
 {
-    return fmin(accel_comp, accel_t * accel_t);
+    // Limit compensation to maintain velocity > 0 (no movement backwards)
+    return fmin(accel_comp, accel_t * accel_t * 0.159);
 }
 
 static void

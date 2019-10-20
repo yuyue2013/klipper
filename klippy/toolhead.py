@@ -70,7 +70,7 @@ class Acceleration:
             # Combine algorithm relies on monotonicity of max_v(start_v).
             max_v = 1.5 * (c*.5)**(1./3.)
         else:
-            d = math.sqrt(c * (c + 2 * b))
+            d = math.sqrt(c * (c + 2. * b))
             e = (b + c + d)**(1./3.)
             if e < EPSILON:
                 return start_v
@@ -232,7 +232,7 @@ class Move:
         self.axes_d = axes_d = [end_pos[i] - start_pos[i] for i in (0, 1, 2, 3)]
         self.move_d = move_d = math.sqrt(sum([d*d for d in axes_d[:3]]))
         self.max_accel = toolhead.max_accel
-        self.max_accel_to_decel = toolhead.max_accel_to_decel
+        max_accel_to_decel = toolhead.max_accel_to_decel
         self.max_jerk = toolhead.max_jerk
         if move_d < .000000001:
             # Extrude only move
@@ -240,7 +240,7 @@ class Move:
                             end_pos[3])
             axes_d[0] = axes_d[1] = axes_d[2] = 0.
             self.move_d = move_d = abs(axes_d[3])
-            self.max_accel = self.max_accel_to_decel = self.max_jerk = 99999999.
+            self.max_accel = max_accel_to_decel = self.max_jerk = 99999999.9
             velocity = speed
             self.is_kinematic_move = False
         self.min_move_t = move_d / velocity
@@ -248,15 +248,18 @@ class Move:
         self.max_cruise_v2 = velocity**2
         self.prev_move = None
         self.junction_max_v2 = 0.
+        self.max_smoothed_v2 = 0.
+        self.smooth_delta_v2 = 2.0 * move_d * max_accel_to_decel
     def limit_speed(self, speed, accel, jerk=None):
         speed2 = speed**2
         if speed2 < self.max_cruise_v2:
             self.max_cruise_v2 = speed2
             self.min_move_t = self.move_d / speed
         self.max_accel = min(self.max_accel, accel)
-        self.max_accel_to_decel = min(self.max_accel_to_decel, accel)
         if jerk and jerk < self.max_jerk:
             self.max_jerk = jerk
+        self.smooth_delta_v2 = min(self.smooth_delta_v2
+                , 2.0 * self.move_d * self.max_accel)
     def calc_peak_v2(self, accel, decel):
         if accel.accel_order == 2:
             effective_accel = min(accel.max_accel, decel.max_accel)
@@ -302,6 +305,9 @@ class Move:
         self.junction_max_v2 = min(
             R * self.max_accel, R * prev_move.max_accel,
             move_centripetal_v2, prev_move_centripetal_v2, extruder_v2)
+        self.max_smoothed_v2 = min(
+            self.junction_max_v2, self.max_cruise_v2, prev_move.max_cruise_v2,
+            prev_move.max_smoothed_v2 + prev_move.smooth_delta_v2)
     def move(self):
         # Determine move velocities
         self.start_accel_v = self.accel.start_accel_v
@@ -358,13 +364,9 @@ class Move:
             self.toolhead.extruder.move(next_move_time, self)
         self.toolhead.update_move_time(
             self.accel_t + self.cruise_t + self.decel_t)
-
-def reset_accel_decel(move):
-    move.accel = Acceleration(move, move.max_accel)
-    move.decel = Acceleration(move, move.max_accel)
-def reset_smoothed_accel_decel(move):
-    move.accel = Acceleration(move, move.max_accel_to_decel)
-    move.decel = Acceleration(move, move.max_accel_to_decel)
+    def reset_accel_decel(self):
+        self.accel = Acceleration(self, self.max_accel)
+        self.decel = Acceleration(self, self.max_accel)
 
 class Trapezoid:
     def __init__(self):
@@ -403,12 +405,6 @@ class Trapezoid:
             m.accel.set_junction(cruise_v2, time_offset_from_start=True)
             cruise_v2 = min(cruise_v2, m.accel.start_accel.max_start_v2)
             i = self.accel_queue.index(m.accel.start_accel.move) - 1
-    def setup_peak_cruise_v2(self):
-        peak_cruise_v2 = self.calc_peak_v2()
-        for m in self.accel_queue:
-            m.max_cruise_v2 = min(m.max_cruise_v2, peak_cruise_v2)
-        for m in self.decel_queue:
-            m.max_cruise_v2 = min(m.max_cruise_v2, peak_cruise_v2)
     def setup_velocity_trapezoid(self):
         peak_cruise_v2 = self.calc_peak_v2()
         self._set_decel(peak_cruise_v2)
@@ -437,43 +433,69 @@ LOOKAHEAD_FLUSH_TIME = 0.250
 # Class to track a list of pending move requests and to facilitate
 # "look-ahead" across moves to reduce acceleration between moves.
 class MoveQueue:
-    def __init__(self):
+    def __init__(self, toolhead):
         self.extruder_lookahead = None
         self.queue = []
         self.leftover = 0
-        self.smoothed_pass_leftover = 0
         self.junction_flush = LOOKAHEAD_FLUSH_TIME
+        self.toolhead = toolhead
     def reset(self):
         del self.queue[:]
         self.leftover = 0
-        self.smoothed_pass_leftover = 0
         self.junction_flush = LOOKAHEAD_FLUSH_TIME
     def set_flush_time(self, flush_time):
         self.junction_flush = flush_time
     def set_extruder(self, extruder):
         self.extruder_lookahead = extruder.lookahead
-    def _backward_pass(self, limit, lazy, reset_accel_decel):
+    def _backward_pass(self, limit, lazy):
+        update_flush_count = lazy
         queue = self.queue
+        flush_count = len(queue)
         # Traverse queue from last to first move and determine maximum
         # junction speed assuming the robot comes to a complete stop
         # after the last move.
-        junction_max_v2 = 0.
+        delayed = []
+        next_smoothed_v2 = peak_cruise_v2 = 0.
+        non_combining_v2 = junction_max_v2 = 0.
         decel_combiner = AccelCombiner(0.)
-        non_combining_v2 = 0.
-        fixed_velocity = len(queue)
         for i in range(len(queue)-1, limit-1, -1):
             move = queue[i]
-            reset_accel_decel(move)
+            # Determine peak cruise velocity
+            reachable_smoothed_v2 = next_smoothed_v2 + move.smooth_delta_v2
+            smoothed_v2 = min(move.max_smoothed_v2, reachable_smoothed_v2)
+            if smoothed_v2 < reachable_smoothed_v2:
+                # It's possible for this move to accelerate
+                if (smoothed_v2 + move.smooth_delta_v2 > next_smoothed_v2
+                    or delayed):
+                    # This move can decelerate or this is a full accel
+                    # move after a full decel move
+                    if update_flush_count and peak_cruise_v2:
+                        flush_count = i
+                        update_flush_count = False
+                    peak_cruise_v2 = min(move.max_cruise_v2, (
+                        smoothed_v2 + reachable_smoothed_v2) * .5)
+                if not update_flush_count and i < flush_count:
+                    move.max_cruise_v2 = min(move.max_cruise_v2, peak_cruise_v2)
+                    for m in delayed:
+                        m.max_cruise_v2 = min(m.max_cruise_v2, peak_cruise_v2)
+                del delayed[:]
+            else:
+                # Delay calculating this move until peak_cruise_v2 is known
+                delayed.append(move)
+            next_smoothed_v2 = smoothed_v2
+
+            # Backward pass for full acceleration.
+            move.reset_accel_decel()
             decel = move.decel
             non_combining_decel = Acceleration(move, decel.max_accel)
             non_combining_decel.set_max_start_v2(non_combining_v2)
             decel_combiner.process_next_accel(decel, junction_max_v2)
             if lazy and (decel.max_start_v2 + EPSILON
                     > non_combining_decel.max_start_v2):
-                fixed_velocity = min(i, fixed_velocity)
+                flush_count = i
             non_combining_v2 = non_combining_decel.calc_max_v2()
             junction_max_v2 = min(move.junction_max_v2, move.max_cruise_v2)
-        return fixed_velocity
+        return flush_count
     def _build_trapezoids(self, start, end, lazy):
         trapezoids = TrapezoidBuilder()
         if start >= end:
@@ -499,7 +521,8 @@ class MoveQueue:
             if decel.max_end_v2 > accel.max_start_v2 + EPSILON:
                 # This move can accelerate
                 trapezoids.add_as_accel(move)
-            if accel.max_end_v2 + EPSILON > decel.max_start_v2:
+            if (accel.max_end_v2 + EPSILON > decel.max_start_v2
+                    or decel.max_end_v2 <= accel.max_start_v2 + EPSILON):
                 # This move must decelerate after acceleration,
                 # or this is a full decel move after full accel move.
                 trapezoids.add_as_decel(move)
@@ -510,39 +533,21 @@ class MoveQueue:
         if not lazy:
             trapezoids.flush()
         return trapezoids
-    def _find_peak_cruise_v2(self, start, lazy):
-        end = self._backward_pass(start, lazy, reset_smoothed_accel_decel)
-        trapezoids = self._build_trapezoids(start, end, lazy)
-        if not trapezoids.queue:
-            return start
-        for trap in trapezoids.queue:
-            trap.setup_peak_cruise_v2()
-        assert trapezoids.queue[-1].decel_queue
-        decel_queue = trapezoids.queue[-1].decel_queue
-        last_move = decel_queue[-1].decel.start_accel.move
-        return self.queue.index(last_move) + 1
-    def _plan_moves(self, start, end, lazy):
-        queue = self.queue
-        if start >= end:
-            return 0
-        end = min(end, self._backward_pass(start, lazy, reset_accel_decel))
-        trapezoids = self._build_trapezoids(start, end, lazy)
-        for trap in trapezoids.queue:
-            trap.setup_velocity_trapezoid()
-        if not trapezoids.queue:
-            return 0
-        assert trapezoids.queue[-1].decel_queue
-        last_move = trapezoids.queue[-1].decel_queue[-1].decel.start_accel.move
-        return self.queue.index(last_move) + 1
     def flush(self, lazy=False):
+        flush_starttime = self.toolhead.reactor.monotonic()
         self.junction_flush = LOOKAHEAD_FLUSH_TIME
         queue = self.queue
-        self.smoothed_pass_leftover = self._find_peak_cruise_v2(
-                self.smoothed_pass_leftover, lazy)
-        flush_count = self._plan_moves(self.leftover
-                , self.smoothed_pass_leftover, lazy)
+        flush_count = self._backward_pass(self.leftover, lazy)
         if not flush_count:
             return
+        trapezoids = self._build_trapezoids(self.leftover, flush_count, lazy)
+        if not trapezoids.queue:
+            return
+        for trap in trapezoids.queue:
+            trap.setup_velocity_trapezoid()
+        assert trapezoids.queue[-1].decel_queue
+        last_move = trapezoids.queue[-1].decel_queue[-1].decel.start_accel.move
+        flush_count = queue.index(last_move) + 1
         # Allow extruder to do its lookahead
         move_count = self.extruder_lookahead(queue, flush_count, lazy)
         if not move_count:
@@ -552,10 +557,10 @@ class MoveQueue:
             move.move()
         # Remove processed moves from the queue
         self.leftover = flush_count - move_count
-        self.smoothed_pass_leftover = self.smoothed_pass_leftover - move_count
-        logging.info(
-                'lazy = %s, qsize = %d, smth_leftover = %d, flush_count = %d'
-                , lazy, len(queue), self.smoothed_pass_leftover, flush_count)
+        flush_endtime = self.toolhead.reactor.monotonic()
+        logging.info('lazy = %s, qsize = %d, flush_count = %d, flush_time = %d'
+                , lazy, len(queue), flush_count
+                , (flush_endtime-flush_starttime)*1000000)
         del queue[:move_count]
     def add_move(self, move):
         self.queue.append(move)
@@ -584,7 +589,7 @@ class ToolHead:
         self.all_mcus = [
             m for n, m in self.printer.lookup_objects(module='mcu')]
         self.mcu = self.all_mcus[0]
-        self.move_queue = MoveQueue()
+        self.move_queue = MoveQueue(self)
         self.commanded_pos = [0., 0., 0., 0.]
         self.printer.register_event_handler("gcode:request_restart",
                                             self._handle_request_restart)

@@ -160,6 +160,7 @@ class AccelCombiner:
     def reset(self, max_start_v2):
         self.references = []
         self.max_start_v2 = max_start_v2
+        self.total_d = 0.
     def calc_min_accel_end_time(self, accel, cruise_v2):
         if accel.start_accel.max_start_v2 >= cruise_v2:
             return accel.combined_d / cruise_v2 + accel.min_start_time
@@ -186,27 +187,35 @@ class AccelCombiner:
                 or accel.accel_order == 2):
             del refs[:]
         junction_accel_limit_v2 = junction_max_v2 * (53. / 54.)
-        while refs and refs[-1].max_start_v2 + EPSILON >= min(
-                accel.max_start_v2 , junction_accel_limit_v2):
-            refs.pop()
+        cruise_accel_limit_v2 = max_cruise_v2 * (53. / 54.)
+        for i, start_accel in enumerate(refs):
+            if start_accel.max_start_v2 + EPSILON >= min(accel.max_start_v2
+                    , junction_accel_limit_v2):
+                del refs[i:]
+                break
+
         a_copy = copy.copy(accel)
-        refs.append(a_copy)
         a_copy.start_accel = a_copy
         a_copy.move_accel = accel
-        for i in range(len(refs)-2, -1, -1):
-            start_accel = refs[i]
+        a_copy.offset_d = self.total_d
+
+        self.total_d += accel.move.move_d
+        del_refs = len(refs)
+        prev_min_end_time = 1e20
+        for i, start_accel in enumerate(refs):
+            start_accel.combined_d = self.total_d - start_accel.offset_d
             # Make sure to not exceed junction_max_v2 during acceleration
             # During S-Curve acceleration, the actual speed can overshoot
             # (start_v + accel * t) by (accel * t / (6 * sqrt(3)))
-            start_accel.limit_accel(
-                    min((junction_accel_limit_v2 - start_accel.max_start_v2) / (
-                        2. * start_accel.combined_d), accel.max_accel)
-                    , accel.jerk)
-            start_accel.combined_d += accel.move.move_d
+            start_accel.limit_accel(min(accel.max_accel
+                , (junction_accel_limit_v2 - start_accel.max_start_v2) / (
+                    2. * (start_accel.combined_d - accel.move.move_d)))
+                , accel.jerk)
 
             combined_max_end_v2 = start_accel.calc_max_v2()
             combined_min_end_time = self.calc_min_accel_end_time(
                     start_accel, min(combined_max_end_v2, max_cruise_v2))
+
             if combined_min_end_time + EPSILON < accel.min_end_time:
                 accel.limit_accel(start_accel.max_accel, start_accel.jerk)
                 accel.max_end_v2 = combined_max_end_v2
@@ -214,11 +223,24 @@ class AccelCombiner:
                 accel.combined_d = start_accel.combined_d
                 # Point to the unmodified Acceleration instance.
                 accel.start_accel = start_accel.move_accel
+            elif prev_min_end_time + EPSILON < combined_min_end_time:
+                del_refs = i-1
+                break
             # Also make sure to not exceed max_cruise_v2 by the end of the
             # combined_d acceleration combined so far.
             start_accel.limit_accel((
-                max_cruise_v2 * (53. / 54.) - start_accel.max_start_v2) / (
+                cruise_accel_limit_v2 - start_accel.max_start_v2) / (
                     2. * start_accel.combined_d), accel.jerk)
+            prev_min_end_time = combined_min_end_time
+        del refs[:del_refs]
+        for start_accel in refs:
+            start_accel.combined_d = self.total_d - start_accel.offset_d
+            start_accel.limit_accel(min(accel.max_accel
+                , (junction_accel_limit_v2 - start_accel.max_start_v2) / (
+                    2. * (start_accel.combined_d - accel.move.move_d))
+                , (cruise_accel_limit_v2 - start_accel.max_start_v2) / (
+                    2. * start_accel.combined_d)) , accel.jerk)
+        refs.append(a_copy)
 
 # Class to track each move request
 class Move:
@@ -394,7 +416,7 @@ class Trapezoid:
         peak_v2 = move.calc_peak_v2(move.accel, move.decel)
         return min(peak_v2, move.max_cruise_v2)
     def _set_decel(self, cruise_v2):
-        for i in range(0, len(self.decel_queue)):
+        for i in range(len(self.decel_queue)):
             m = self.decel_queue[i]
             m.decel.set_junction(cruise_v2, time_offset_from_start=False)
             cruise_v2 = min(cruise_v2, m.decel.start_accel.max_start_v2)

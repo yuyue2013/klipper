@@ -82,8 +82,6 @@ class PrinterExtruder:
         return self.deactivate_gcode.render()
     def stats(self, eventtime):
         return self.heater.stats(eventtime)
-    def setup_accel_order(self, accel_order):
-        self.ffi_lib.move_set_accel_order(self.cmove, accel_order)
     def motor_off(self, print_time):
         self.stepper.motor_enable(print_time, 0)
         self.need_motor_enable = True
@@ -169,54 +167,15 @@ class PrinterExtruder:
                     return i
             move.extrude_max_corner_v = max_corner_v
         return flush_count
-    def move(self, print_time, move):
+    def move(self, print_time, cmove):
         if self.need_motor_enable:
             self.stepper.motor_enable(print_time, 1)
             self.need_motor_enable = False
-        axis_d = move.axes_d[3]
-        axis_r = axis_d / move.move_d
-        effective_accel = move.effective_accel * axis_r
-        effective_decel = move.effective_decel * axis_r
-        start_accel_v = move.start_accel_v * axis_r
-        cruise_v = move.cruise_v * axis_r
-        accel_t, cruise_t, decel_t = move.accel_t, move.cruise_t, move.decel_t
-        accel_offset_t, total_accel_t = move.accel_offset_t, move.total_accel_t
-        decel_offset_t, total_decel_t = move.decel_offset_t, move.total_decel_t
-
-        # Update for pressure advance
-        extra_accel_v = extra_decel_v = 0.
-        start_pos = self.extrude_pos
-        if (axis_d >= 0. and (move.axes_d[0] or move.axes_d[1])
-                and False): # TODO: enable self.pressure_advance):
-            # Calculate extra_accel_v
-            pressure_advance = self.pressure_advance * move.extrude_r
-            prev_pressure_d = start_pos - move.start_pos[3]
-            if accel_t:
-                npd = move.cruise_v * pressure_advance
-                extra_accel_d = npd - prev_pressure_d
-                if extra_accel_d > 0.:
-                    extra_accel_v = extra_accel_d / accel_t
-                    axis_d += extra_accel_d
-                    prev_pressure_d += extra_accel_d
-            # Calculate extra_decel_v
-            emcv = move.extrude_max_corner_v
-            if decel_t and emcv < move.cruise_v:
-                npd = max(emcv, move.end_v) * pressure_advance
-                extra_decel_d = npd - prev_pressure_d
-                if extra_decel_d < 0.:
-                    axis_d += extra_decel_d
-                    extra_decel_v = extra_decel_d / decel_t
 
         # Generate steps
-        self.extruder_move_fill(
-            self.cmove, print_time,
-            accel_t, accel_offset_t, total_accel_t,
-            cruise_t,
-            decel_t, decel_offset_t, total_decel_t,
-            start_pos, start_accel_v, cruise_v,
-            effective_accel, effective_decel, extra_accel_v, extra_decel_v)
+        self.extruder_move_fill(cmove, self.cmove)
         self.stepper.step_itersolve(self.cmove)
-        self.extrude_pos = start_pos + axis_d
+        self.extrude_pos += cmove.extrude_d
     cmd_SET_PRESSURE_ADVANCE_help = "Set pressure advance parameters"
     def cmd_default_SET_PRESSURE_ADVANCE(self, params):
         extruder = self.printer.lookup_object('toolhead').get_extruder()
@@ -241,8 +200,6 @@ class PrinterExtruder:
 class DummyExtruder:
     def set_active(self, print_time, is_active):
         return 0.
-    def setup_accel_order(self, accel_order):
-        pass
     def motor_off(self, move_time):
         pass
     def check_move(self, move):

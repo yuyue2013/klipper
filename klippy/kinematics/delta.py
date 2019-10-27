@@ -145,11 +145,11 @@ class DeltaKinematics:
             move.limit_speed(max_velocity * r, self.max_accel * r)
             limit_xy2 = -1.
         self.limit_xy2 = min(limit_xy2, self.slow_xy2)
-    def move(self, print_time, move):
+    def move(self, print_time, cmove):
         if self.need_motor_enable:
             self._check_motor_enable(print_time)
         for rail in self.rails:
-            rail.step_itersolve(move.cmove)
+            rail.step_itersolve(cmove)
     def get_status(self):
         return {'homed_axes': '' if self.need_home else 'XYZ'}
 

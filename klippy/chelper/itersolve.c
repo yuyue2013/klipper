@@ -92,8 +92,6 @@ move_fill(struct move *m, double print_time
           , double accel_t, double accel_offset_t, double total_accel_t
           , double cruise_t
           , double decel_t, double decel_offset_t, double total_decel_t
-          , double start_pos_x, double start_pos_y, double start_pos_z
-          , double axes_d_x, double axes_d_y, double axes_d_z
           , double start_accel_v, double cruise_v
           , double effective_accel, double effective_decel)
 {
@@ -123,16 +121,6 @@ move_fill(struct move *m, double print_time
     }
     m->cruise_start_d = move_eval_accel(&m->accel, accel_t);
     m->decel_start_d = m->cruise_start_d + cruise_t * cruise_v;
-
-    // Setup for move_get_coord()
-    m->start_pos.x = start_pos_x;
-    m->start_pos.y = start_pos_y;
-    m->start_pos.z = start_pos_z;
-    double inv_move_d = 1. / sqrt(axes_d_x*axes_d_x + axes_d_y*axes_d_y
-                                  + axes_d_z*axes_d_z);
-    m->axes_r.x = axes_d_x * inv_move_d;
-    m->axes_r.y = axes_d_y * inv_move_d;
-    m->axes_r.z = axes_d_z * inv_move_d;
 }
 
 // Return the distance moved given a time in a move
@@ -307,8 +295,12 @@ itersolve_calc_position_from_coord(struct stepper_kinematics *sk
 {
     struct move m;
     memset(&m, 0, sizeof(m));
-    move_fill(&m, 0., 0., 0., 0., 1., 0., 0., 0., x, y, z, 0., 1., 0., 0., 1.
-            , 0., 0.);
+    m.start_pos.x = x;
+    m.start_pos.y = y;
+    m.start_pos.z = z;
+    m.axes_r.y = 1.;
+    m.cruise_t = 1.;
+    m.cruise_v = 1.;
     return sk->calc_position(sk, &m, 0.);
 }
 

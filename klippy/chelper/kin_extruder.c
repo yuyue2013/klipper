@@ -14,7 +14,7 @@ static double
 extruder_calc_position(struct stepper_kinematics *sk, struct move *m
                        , double move_time)
 {
-    return m->start_pos.x + move_get_distance(m, move_time);
+    return m->extrude_pos + move_get_distance(m, move_time);
 }
 
 struct stepper_kinematics * __visible
@@ -87,43 +87,42 @@ extruder_bezier6(struct move_accel *ma, double start_accel_v, double extra_v
 }
 
 // Populate a 'struct move' with an extruder velocity trapezoid
+// from kinematic velocity trapezoid
 void __visible
-extruder_move_fill(struct move *m, double print_time
-                   , double accel_t, double accel_offset_t, double total_accel_t
-                   , double cruise_t
-                   , double decel_t, double decel_offset_t, double total_decel_t
-                   , double start_pos
-                   , double start_accel_v, double cruise_v
-                   , double effective_accel , double effective_decel
-                   , double extra_accel_v, double extra_decel_v)
+extruder_move_fill(const struct move *kin, struct move *extr)
 {
+    *extr = *kin;
+    double extra_accel_v = 0., extra_decel_v = 0.;
     // Setup velocity trapezoid
-    m->print_time = print_time;
-    m->move_t = accel_t + cruise_t + decel_t;
-    m->accel_t = accel_t;
-    m->cruise_t = cruise_t;
-
+    const struct accel_group *accel = &kin->accel_group;
+    const struct accel_group *decel = &kin->decel_group;
+    double accel_offset_t = accel->accel_offset_t;
+    double total_accel_t = accel->total_accel_t;
+    double decel_offset_t = decel->accel_offset_t;
+    double total_decel_t = decel->total_accel_t;
     // Setup for accel/cruise/decel phases
-    m->cruise_v = cruise_v;
-    if (m->accel_order == 4) {
-        extruder_bezier4(&m->accel, start_accel_v, extra_accel_v
+    double extrude_r = kin->extrude_d / kin->move_d;
+    double effective_accel = accel->effective_accel * extrude_r;
+    double effective_decel = decel->effective_accel * extrude_r;
+    double start_accel_v = accel->start_accel_v * extrude_r;
+    double cruise_v = extr->cruise_v = kin->cruise_v * extrude_r;
+    if (extr->accel_order == 4) {
+        extruder_bezier4(&extr->accel, start_accel_v, extra_accel_v
                 , effective_accel, total_accel_t, accel_offset_t);
-        extruder_bezier4(&m->decel, cruise_v, extra_decel_v
+        extruder_bezier4(&extr->decel, cruise_v, extra_decel_v
                 , -effective_decel, total_decel_t, decel_offset_t);
-    } else if (m->accel_order == 6) {
-        extruder_bezier6(&m->accel, start_accel_v, extra_accel_v
+    } else if (extr->accel_order == 6) {
+        extruder_bezier6(&extr->accel, start_accel_v, extra_accel_v
                 , effective_accel, total_accel_t, accel_offset_t);
-        extruder_bezier6(&m->decel, cruise_v, extra_decel_v
+        extruder_bezier6(&extr->decel, cruise_v, extra_decel_v
                 , -effective_decel, total_decel_t, decel_offset_t);
     } else {
-        extruder_bezier2(&m->accel, start_accel_v, extra_accel_v
+        extruder_bezier2(&extr->accel, start_accel_v, extra_accel_v
                 , effective_accel, total_accel_t, accel_offset_t);
-        extruder_bezier2(&m->decel, cruise_v, extra_decel_v
+        extruder_bezier2(&extr->decel, cruise_v, extra_decel_v
                 , -effective_decel, total_decel_t, decel_offset_t);
     }
-    m->cruise_start_d = move_eval_accel(&m->accel, accel_t);
-    m->decel_start_d = m->cruise_start_d + cruise_t * cruise_v;
-
-    // Setup start distance
-    m->start_pos.x = start_pos;
+    double accel_t = accel->accel_t;
+    extr->cruise_start_d = move_eval_accel(&extr->accel, accel_t);
+    extr->decel_start_d = extr->cruise_start_d + extr->cruise_t * cruise_v;
 }

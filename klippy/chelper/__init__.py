@@ -15,13 +15,14 @@ COMPILE_CMD = ("gcc -Wall -g -O2 -shared -fPIC"
                " -flto -fwhole-program -fno-use-linker-plugin"
                " -o %s %s")
 SOURCE_FILES = [
-    'pyhelper.c', 'serialqueue.c', 'stepcompress.c', 'itersolve.c',
+    'pyhelper.c', 'serialqueue.c', 'stepcompress.c', 'itersolve.c', 'moveq.c',
     'kin_cartesian.c', 'kin_corexy.c', 'kin_delta.c', 'kin_polar.c',
     'kin_winch.c', 'kin_extruder.c',
 ]
 DEST_LIB = "c_helper.so"
 OTHER_FILES = [
-    'list.h', 'serialqueue.h', 'stepcompress.h', 'itersolve.h', 'pyhelper.h'
+    'list.h', 'serialqueue.h', 'stepcompress.h', 'itersolve.h', 'moveq.h',
+    'pyhelper.h'
 ]
 
 defs_stepcompress = """
@@ -43,14 +44,51 @@ defs_stepcompress = """
 """
 
 defs_itersolve = """
+    struct coord {
+        double x, y, z;
+    };
+    struct move_accel {
+        double c0, c1, c2, c3, c4, c5, c6;
+        double offset_t;
+    };
+    struct accel_group {
+        double max_accel, min_accel;
+        double max_jerk;
+        double min_jerk_limit_time;
+        double combined_d, accel_d;
+        double accel_t, accel_offset_t, total_accel_t;
+        double start_accel_v;
+        double effective_accel;
+        struct accel_group *start_accel, *next_accel;
+        struct move *move;
+        double max_start_v, max_start_v2, max_end_v2;
+    };
+    struct list_node {
+        struct list_node *next, *prev;
+    };
+    struct move {
+        struct list_node node;
+        double print_time, move_t;
+        double accel_t, cruise_t;
+        double cruise_start_d, decel_start_d;
+        double cruise_v;
+        struct move_accel accel, decel;
+        struct coord start_pos, axes_r;
+        double extrude_pos, extrude_d;
+        double move_d;
+        int accel_order;
+        int is_kinematic_move;
+        struct accel_group accel_group, decel_group, default_accel;
+        double smooth_delta_v2, max_smoothed_v2;
+        double max_cruise_v2, junction_max_v2;
+        double start_v, end_v;
+    };
+
     struct move *move_alloc(void);
-    void move_set_accel_order(struct move *m, int accel_order);
     void move_fill(struct move *m, double print_time
         , double accel_t, double accel_offset_t, double total_accel_t
         , double cruise_t
         , double decel_t, double decel_offset_t, double total_decel_t
-        , double start_pos_x, double start_pos_y, double start_pos_z
-        , double axes_d_x, double axes_d_y, double axes_d_z
         , double start_accel_v, double cruise_v
         , double effective_accel, double effective_decel);
     double move_get_time(struct move *m, double distance);
@@ -61,6 +99,19 @@ defs_itersolve = """
         , double x, double y, double z);
     void itersolve_set_commanded_pos(struct stepper_kinematics *sk, double pos);
     double itersolve_get_commanded_pos(struct stepper_kinematics *sk);
+"""
+defs_moveq = """
+    struct moveq *moveq_alloc(void);
+    void moveq_reset(struct moveq *mq);
+    int moveq_add(struct moveq *mq, int is_kinematic_move, double move_d
+        , double start_pos_x, double start_pos_y, double start_pos_z
+        , double axes_d_x, double axes_d_y, double axes_d_z
+        , double start_pos_e, double axes_d_e
+        , double junction_max_v2, double velocity
+        , int accel_order, double accel, double smoothed_accel
+        , double jerk, double min_jerk_limit_time);
+    int moveq_flush(struct moveq *mq, int lazy);
+    double moveq_getmove(struct moveq *mq, double print_time, struct move *m);
 """
 
 defs_kin_cartesian = """
@@ -87,14 +138,7 @@ defs_kin_winch = """
 
 defs_kin_extruder = """
     struct stepper_kinematics *extruder_stepper_alloc(void);
-    void extruder_move_fill(struct move *m, double print_time
-        , double accel_t, double accel_offset_t, double total_accel_t
-        , double cruise_t
-        , double decel_t, double decel_offset_t, double total_decel_t
-        , double start_pos
-        , double start_accel_v, double cruise_v
-        , double effective_accel, double effective_decel
-        , double extra_accel_v, double extra_decel_v);
+    void extruder_move_fill(const struct move *kin, struct move *extr);
 """
 
 defs_serialqueue = """
@@ -136,7 +180,7 @@ defs_std = """
 
 defs_all = [
     defs_pyhelper, defs_serialqueue, defs_std,
-    defs_stepcompress, defs_itersolve,
+    defs_stepcompress, defs_itersolve, defs_moveq,
     defs_kin_cartesian, defs_kin_corexy, defs_kin_delta, defs_kin_polar,
     defs_kin_winch, defs_kin_extruder
 ]

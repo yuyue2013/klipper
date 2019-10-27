@@ -90,19 +90,38 @@ list_join_tail(struct list_head *add, struct list_head *h)
 #define list_next_entry(pos, member)                            \
     container_of((pos)->member.next, typeof(*pos), member)
 
+#define list_prev_entry(pos, member)                            \
+    container_of((pos)->member.prev, typeof(*pos), member)
+
 #define list_first_entry(head, type, member)                    \
     container_of((head)->root.next, type, member)
 
+#define list_last_entry(head, type, member)                     \
+    container_of((head)->root.prev, type, member)
+
+#define list_at_end(pos, head, member)                          \
+    (&(pos)->member == &(head)->root)
+
 #define list_for_each_entry(pos, head, member)                  \
     for (pos = list_first_entry((head), typeof(*pos), member)   \
-         ; &pos->member != &(head)->root                        \
+         ; !list_at_end(pos, head, member)                      \
          ; pos = list_next_entry(pos, member))
 
 #define list_for_each_entry_safe(pos, n, head, member)          \
     for (pos = list_first_entry((head), typeof(*pos), member)   \
           , n = list_next_entry(pos, member)                    \
-         ; &pos->member != &(head)->root                        \
+         ; !list_at_end(pos, head, member)                      \
          ; pos = n, n = list_next_entry(n, member))
 
+#define list_for_each_entry_reversed(pos, head, member)         \
+    for (pos = list_last_entry((head), typeof(*pos), member)    \
+         ; !list_at_end(pos, head, member)                      \
+         ; pos = list_prev_entry(pos, member))
+
+#define list_for_each_entry_reversed_safe(pos, n, head, member) \
+    for (pos = list_last_entry((head), typeof(*pos), member)    \
+          , n = list_prev_entry(pos, member)                    \
+         ; !list_at_end(pos, head, member)                      \
+         ; pos = n, n = list_prev_entry(pos, member))
 
 #endif // list.h

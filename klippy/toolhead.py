@@ -45,6 +45,7 @@ class Move:
     def limit_speed(self, speed, accel, jerk=None):
         speed2 = speed**2
         if speed2 < self.max_cruise_v2:
+            self.velocity = speed
             self.max_cruise_v2 = speed2
             self.min_move_t = self.move_d / speed
         self.accel = min(self.accel, accel)
@@ -386,7 +387,7 @@ class ToolHead:
         if not move.move_d or not move.is_kinematic_move:
             return
         self.kin.check_move(move)
-        speed = math.sqrt(move.max_cruise_v2)
+        speed = move.velocity
         move_accel = move.accel
         # Transition to "Flushed" state and then to "Drip" state
         self._full_flush()

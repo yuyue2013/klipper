@@ -60,7 +60,7 @@ will most likely list
 Check out the new branch:
 ```
 $ git fetch s-curve-exp
-$ git checkout s-curve-exp/scurve-c-combined
+$ git checkout s-curve-exp/scurve-c-combine
 ```
 
 Add `acceleration_order` paramter to your `printer.cfg`

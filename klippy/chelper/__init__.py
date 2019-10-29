@@ -79,6 +79,7 @@ defs_itersolve = """
         int accel_order;
         int is_kinematic_move;
         struct accel_group accel_group, decel_group, default_accel;
+        struct accel_group safe_decel;
         double smooth_delta_v2, max_smoothed_v2;
         double max_cruise_v2, junction_max_v2;
         double start_v, end_v;

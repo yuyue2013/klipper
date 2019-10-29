@@ -454,22 +454,23 @@ backward_pass(struct moveq *mq, int lazy, int *ret)
     for (move = flush_limit;
             !list_at_end(move, &mq->moves, node);
             move = list_prev_entry(move, node)) {
-        struct accel_group decel = move->decel_group;
-        double combined_d = 0.;
+        struct accel_group safe_decel = move->decel_group;
+        safe_decel.combined_d = 0.;
         struct move *m, *nm = NULL;
         for (m = move; !list_at_end(m, &mq->moves, node); m = nm) {
-            combined_d += m->decel_group.combined_d;
-            limit_accel(&decel, m->decel_group.max_accel
+            safe_decel.combined_d += m->decel_group.combined_d;
+            limit_accel(&safe_decel, m->decel_group.max_accel
                     , m->decel_group.max_jerk);
-            double dist = calc_min_safe_dist(&decel, decel.max_end_v2);
-            struct move *s = m->decel_group.start_accel->move;
-            nm = list_next_entry(s, node);
-            if (combined_d > dist + EPSILON
+            double min_safe_dist = calc_min_safe_dist(&safe_decel
+                    , safe_decel.max_end_v2);
+            struct accel_group *start_decel = m->decel_group.start_accel;
+            nm = list_next_entry(start_decel->move, node);
+            if (safe_decel.combined_d > min_safe_dist + EPSILON
                     && !list_at_end(nm, &mq->moves, node)
-                    && nm->junction_max_v2 <= s->decel_group.max_start_v2) {
-                // TODO: consider memoizing move 's' for move 'm' as a reference
-                // deceleration in case we will not reach committed velocity on
-                // the next flush operation, or prove it cannot happen.
+                    && nm->junction_max_v2 <= start_decel->max_start_v2) {
+                move->safe_decel = safe_decel;
+                move->safe_decel.move = move;
+                move->safe_decel.start_accel = start_decel;
                 break;
             }
         }
@@ -488,12 +489,12 @@ backward_pass(struct moveq *mq, int lazy, int *ret)
 static double
 calc_trap_peak_v2(struct move *accel_head, struct move *decel_head)
 {
-    if (accel_head && decel_head != accel_head) {
+    if (decel_head != accel_head) {
         double peak_v2 = MIN(decel_head->decel_group.max_end_v2
-                , accel_head->accel_group.max_end_v2);
-        return MIN(MIN(peak_v2, decel_head->junction_max_v2)
-                , MIN(decel_head->max_cruise_v2
-                    , accel_head->max_cruise_v2));
+                , decel_head->junction_max_v2);
+        if (accel_head)
+            peak_v2 = MIN(peak_v2, accel_head->accel_group.max_end_v2);
+        return peak_v2;
     }
     double peak_v2 = calc_move_peak_v2(decel_head);
     return MIN(peak_v2, decel_head->max_cruise_v2);
@@ -584,9 +585,18 @@ forward_pass(struct moveq *mq, struct move *end, int lazy, int *ret)
     double max_end_v2 = move->decel_group.max_end_v2;
     if (max_end_v2 + EPSILON < start_v2) {
         errorf("Logic error: impossible to reach the committed v2 = %.3f"
-                ", max velocity = %.3lf", start_v2, max_end_v2);
-        *ret = ERROR_RET;
-        return NULL;
+                ", max velocity = %.3lf, fallback to suboptimal planning"
+                , start_v2, max_end_v2);
+        struct accel_group *decel = &move->decel_group;
+        double decel_start_v2 = move->safe_decel.start_accel->max_start_v2;
+        // Current max_start_v2 for safe_decel->move can only be less than
+        // previously captured safe_decel->max_start_v2.
+        *decel = move->safe_decel;
+        // Note that there is no need to check if deceleration will exceed
+        // any junction_max_v2 on the way - if it did, we would have reached
+        // mq->prev_end_v2 due to the choice of safe_decel->start_accel.
+        decel->max_end_v2 = start_v2;
+        set_max_start_v2(decel->start_accel, MIN(start_v2, decel_start_v2));
     }
     struct list_head trapezoid;
     list_init(&trapezoid);
@@ -604,7 +614,8 @@ forward_pass(struct moveq *mq, struct move *end, int lazy, int *ret)
 
         process_next_accel(mq, accel
                 , MIN(move->junction_max_v2, prev_cruise_v2));
-        if (decel->max_end_v2 > accel->max_start_v2 + EPSILON) {
+        int can_accelerate = decel->max_end_v2 > accel->max_start_v2 + EPSILON;
+        if (can_accelerate) {
             // This move can accelerate
             if (decel_head) {
                 last_flushed_move = trap_flush(&move->node, &trapezoid
@@ -613,11 +624,12 @@ forward_pass(struct moveq *mq, struct move *end, int lazy, int *ret)
             }
             add_as_accel(move, &trapezoid, &accel_head, &decel_head);
         }
-        if (accel->max_end_v2 + EPSILON > decel->max_start_v2
-                || decel->max_end_v2 <= accel->max_start_v2 + EPSILON) {
+        int must_decelerate = accel->max_end_v2 + EPSILON > decel->max_start_v2;
+        if (must_decelerate || !can_accelerate) {
             // This move must decelerate after acceleration,
             // or this is a full decel move after full accel move.
-            for (; move != end; move = next_move, next_move = list_next_entry(move, node)) {
+            for (; move != end; move = next_move
+                    , next_move = list_next_entry(move, node)) {
                 add_as_decel(move, &trapezoid, &accel_head, &decel_head);
                 if (move == decel->start_accel->move) break;
             }

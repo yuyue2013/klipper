@@ -183,6 +183,20 @@ calc_min_accel_dist(const struct accel_group *ag, double cruise_v)
     return (start_v + cruise_v) * 0.5 * accel_t;
 }
 
+inline static double
+calc_min_safe_dist(const struct accel_group *ag, double cruise_v2)
+{
+    double min_dist = cruise_v2 / (2.0 * ag->max_accel);
+    if (likely(ag->move->accel_order > 2)) {
+        // It is possible to decelerate from cruise_v2 to any other velocity
+        // in range [0; cruise_v2]. If deceleration distance is smaller than
+        // this, some velocities in that range are prohibited for deceleration.
+        double d = sqrt((16. / 9.) * pow(cruise_v2, 1.5) / ag->max_jerk);
+        min_dist = MAX(min_dist, d);
+    }
+    return min_dist;
+}
+
 inline static void
 calc_min_accel_end_time(struct junction_point *jp, double cruise_v2)
 {
@@ -211,7 +225,7 @@ process_next_accel(struct moveq *mq, struct accel_group *ag
         ? NULL : list_last_entry(&mq->junctions, struct junction_point, node);
     struct accel_group *prev_accel = NULL;
     const double max_cruise_v2 = ag->move->max_cruise_v2;
-    double start_v2 = MIN(junction_max_v2, max_cruise_v2);
+    double start_v2 = junction_max_v2;
     if (likely(prev_jp)) {
         prev_accel = prev_jp->ma;
         start_v2 = MIN(start_v2
@@ -227,7 +241,6 @@ process_next_accel(struct moveq *mq, struct accel_group *ag
         reset_junctions(mq, start_v2);
     }
     const double junction_accel_limit_v2 = junction_max_v2 * (53. / 54.);
-    const double cruise_accel_limit_v2 = max_cruise_v2 * (53. / 54.);
     while (likely(!list_empty(&mq->junctions))) {
         struct junction_point *last_jp = list_last_entry(
                 &mq->junctions, struct junction_point, node);
@@ -269,14 +282,6 @@ process_next_accel(struct moveq *mq, struct accel_group *ag
     ag->combined_d = best_jp->accel.combined_d;
     // Point to the real accel_group instance.
     ag->start_accel = best_jp->ma;
-
-    list_for_each_entry(jp, &mq->junctions, node) {
-        // Also make sure to not exceed max_cruise_v2 by the end of the
-        // combined_d acceleration combined so far.
-        limit_accel(&jp->accel, 0.5 * (cruise_accel_limit_v2
-                    - jp->accel.max_start_v2) / jp->accel.combined_d
-                , ag->max_jerk);
-    }
 }
 
 static int
@@ -363,19 +368,16 @@ static struct move *
 backward_pass(struct moveq *mq, int lazy, int *ret)
 {
     *ret = 0;
-    int update_smoothed_flush_limit = lazy, smoothed_pass_finished = 0;
+    int update_flush_limit = lazy;
     // Traverse queue from last to first move and determine maximum
     // junction speed assuming the robot comes to a complete stop
     // after the last move.
     struct list_head delayed;
     list_init(&delayed);
-    double next_smoothed_v2 = 0., peak_cruise_v2 = 0.;
-    double non_combining_v2 = 0., junction_max_v2 = 0.;
+    double next_smoothed_v2 = 0., peak_cruise_v2 = 0., junction_max_v2 = 0.;
     reset_junctions(mq, 0.);
-    struct move *move = NULL, *pm = NULL;
-    struct move *flush_limit = NULL, *new_smoothed_pass_limit = NULL;
+    struct move *move = NULL, *pm = NULL, *flush_limit = NULL;
     list_for_each_entry_reversed_safe(move, pm, &mq->moves, node) {
-        if (smoothed_pass_finished) goto full_accel_pass;
         // Determine peak cruise velocity
         double reachable_smoothed_v2 = next_smoothed_v2 + move->smooth_delta_v2;
         double smoothed_v2 = MIN(move->max_smoothed_v2, reachable_smoothed_v2);
@@ -385,19 +387,34 @@ backward_pass(struct moveq *mq, int lazy, int *ret)
                     || !list_empty(&delayed)) {
                 // This move can decelerate or this is a full accel
                 // move after a full decel move
-                if (update_smoothed_flush_limit && peak_cruise_v2) {
-                    new_smoothed_pass_limit = flush_limit = move;
-                    update_smoothed_flush_limit = 0;
+                if (update_flush_limit && peak_cruise_v2) {
+                    flush_limit = move;
+                    update_flush_limit = 0;
                 }
                 peak_cruise_v2 = (smoothed_v2 + reachable_smoothed_v2) * .5;
                 peak_cruise_v2 = MIN(move->max_cruise_v2, peak_cruise_v2);
             }
             struct move *m = NULL;
-            if (!update_smoothed_flush_limit && move != flush_limit) {
+            if (!update_flush_limit && move != flush_limit) {
                 move->max_cruise_v2 = MIN(move->max_cruise_v2
                         , peak_cruise_v2);
-                list_for_each_entry(m, &delayed, node)
+                move->junction_max_v2 = MIN(move->junction_max_v2
+                        , peak_cruise_v2);
+                list_for_each_entry(m, &delayed, node) {
                     m->max_cruise_v2 = MIN(m->max_cruise_v2, peak_cruise_v2);
+                    m->junction_max_v2 = MIN(m->junction_max_v2
+                            , peak_cruise_v2);
+                }
+                m = list_next_entry(move, node);
+                if (lazy && list_at_end(m, &mq->moves, node)) {
+                    errorf("Logic error: smoothed peak velocity trapezoid at "
+                            "the end of the move queue");
+                    *ret = ERROR_RET;
+                    return NULL;
+                }
+                if (!list_at_end(m, &mq->moves, node)) {
+                    m->junction_max_v2 = MIN(m->junction_max_v2, peak_cruise_v2);
+                }
             }
             struct move *nm = NULL, *qm = move;
             // Put delayed moves back to their places in mq->moves list.
@@ -411,35 +428,60 @@ backward_pass(struct moveq *mq, int lazy, int *ret)
             list_del(&move->node);
             list_add_head(&move->node, &delayed);
         }
-        next_smoothed_v2 = smoothed_v2;
         if (mq->smoothed_pass_limit == move)
-            smoothed_pass_finished = 1;
+            break;
+        next_smoothed_v2 = smoothed_v2;
+    }
+    if (!list_empty(&delayed)) {
+        errorf("Non-empty 'delayed' queue after the smoothed pass");
+        *ret = ERROR_RET;
+        return NULL;
+    }
+    mq->smoothed_pass_limit = flush_limit;
+    if (update_flush_limit) return NULL;
 
-    full_accel_pass:
+    list_for_each_entry_reversed(move, &mq->moves, node) {
         // Restore the default accel and decel values if they were modified
         // on previous backward pass
         move->decel_group = move->accel_group = move->default_accel;
 
         // Backward pass for full acceleration
-        struct accel_group non_combining_decel = move->default_accel;
-        non_combining_decel.combined_d = move->move_d;
-        non_combining_decel.start_accel = &non_combining_decel;
-        set_max_start_v2(&non_combining_decel, non_combining_v2);
-        non_combining_v2 = calc_max_v2(&non_combining_decel);
-
         struct accel_group *decel = &move->decel_group;
         process_next_accel(mq, decel, junction_max_v2);
-        if (lazy && decel->max_start_v2 + EPSILON
-                > non_combining_decel.max_start_v2)
+        junction_max_v2 = move->junction_max_v2;
+    }
+    if (!lazy) return flush_limit;
+    for (move = flush_limit;
+            !list_at_end(move, &mq->moves, node);
+            move = list_prev_entry(move, node)) {
+        struct accel_group decel = move->decel_group;
+        double combined_d = 0.;
+        struct move *m, *nm = NULL;
+        for (m = move; !list_at_end(m, &mq->moves, node); m = nm) {
+            combined_d += m->decel_group.combined_d;
+            limit_accel(&decel, m->decel_group.max_accel
+                    , m->decel_group.max_jerk);
+            double dist = calc_min_safe_dist(&decel, decel.max_end_v2);
+            struct move *s = m->decel_group.start_accel->move;
+            nm = list_next_entry(s, node);
+            if (combined_d > dist + EPSILON
+                    && !list_at_end(nm, &mq->moves, node)
+                    && nm->junction_max_v2 <= s->decel_group.max_start_v2) {
+                // TODO: consider memoizing move 's' for move 'm' as a reference
+                // deceleration in case we will not reach committed velocity on
+                // the next flush operation, or prove it cannot happen.
+                break;
+            }
+        }
+        if (list_at_end(m, &mq->moves, node)) {
+            // The current 'move' does not have a junction point on its
+            // deceleration path where junction_max_v2 is reached farther
+            // than the minimum safe distance. This means that this move can
+            // change its max_end_v2 if more moves are added to the queue
+            // later, so it is not safe to flush moves until this move yet.
             flush_limit = move;
-        junction_max_v2 = MIN(move->junction_max_v2, move->max_cruise_v2);
+        }
     }
-    if (!list_empty(&delayed)) {
-        *ret = ERROR_RET;
-        return NULL;
-    }
-    mq->smoothed_pass_limit = new_smoothed_pass_limit;
-    if (update_smoothed_flush_limit) return NULL;
     return flush_limit;
 }
 

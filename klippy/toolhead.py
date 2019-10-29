@@ -75,8 +75,8 @@ class Move:
                                     * prev_move.accel)
         self.junction_max_v2 = min(
             R * self.accel, R * prev_move.accel,
-            move_centripetal_v2, prev_move_centripetal_v2, extruder_v2)
-
+            move_centripetal_v2, prev_move_centripetal_v2,
+            extruder_v2, self.max_cruise_v2, prev_move.max_cruise_v2)
 
 LOOKAHEAD_FLUSH_TIME = 0.250
 

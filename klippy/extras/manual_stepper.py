@@ -24,7 +24,8 @@ class ManualStepper:
         # Setup iterative solver
         ffi_main, ffi_lib = chelper.get_ffi()
         self.cmove = ffi_main.gc(ffi_lib.move_alloc(), ffi_lib.free)
-        self.move_fill = ffi_lib.move_fill
+        self.move_fill_pos = ffi_lib.move_fill_pos
+        self.move_fill_trap = ffi_lib.move_fill_trap
         self.stepper.setup_itersolve('cartesian_stepper_alloc', 'x')
         self.stepper.set_max_jerk(9999999.9, 9999999.9)
         # Register commands
@@ -54,10 +55,10 @@ class ManualStepper:
         dist = movepos - cp
         accel_t, cruise_t, cruise_v = force_move.calc_move_time(
             dist, speed, accel)
-        self.move_fill(self.cmove, self.next_cmd_time,
-                       accel_t, cruise_t, accel_t,
-                       cp, 0., 0., dist, 0., 0.,
-                       0., cruise_v, accel, accel)
+        self.move_fill_trap(self.cmove, self.next_cmd_time,
+                            accel_t, 0, accel_t, cruise_t, accel_t, 0, accel_t,
+                            0., cruise_v, accel, accel)
+        self.move_fill_pos(self.cmove, cp, 0., 0., dist, 0., 0., 0., 0.)
         self.stepper.step_itersolve(self.cmove)
         self.next_cmd_time += accel_t + cruise_t + accel_t
         self.sync_print_time()

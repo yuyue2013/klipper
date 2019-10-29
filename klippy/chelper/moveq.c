@@ -304,11 +304,10 @@ set_accel(struct accel_group* combined, double cruise_v2
     struct move m;
     memset(&m, 0, sizeof(m));
     m.accel_order = combined->move->accel_order;
-    move_fill(&m, 0.,
-        combined_accel_t, 0., combined_accel_t,
-        0.,
-        0., 0., 0.,
-        start_accel_v, cruise_v, effective_accel, 0.);
+    move_fill_trap(&m, 0.,
+            combined_accel_t, 0., combined_accel_t,
+            0., 0., 0., 0.,
+            start_accel_v, cruise_v, effective_accel, 0.);
     double remaining_accel_t = combined_accel_t;
     double remaining_accel_d = combined_accel_d;
     struct accel_group *a = combined->start_accel;
@@ -413,7 +412,8 @@ backward_pass(struct moveq *mq, int lazy, int *ret)
                     return NULL;
                 }
                 if (!list_at_end(m, &mq->moves, node)) {
-                    m->junction_max_v2 = MIN(m->junction_max_v2, peak_cruise_v2);
+                    m->junction_max_v2 = MIN(m->junction_max_v2
+                            , peak_cruise_v2);
                 }
             }
             struct move *nm = NULL, *qm = move;
@@ -656,7 +656,7 @@ forward_pass(struct moveq *mq, struct move *end, int lazy, int *ret)
 }
 
 int __visible
-moveq_add(struct moveq *mq, int is_kinematic_move, double move_d
+moveq_add(struct moveq *mq, double move_d
           , double start_pos_x, double start_pos_y, double start_pos_z
           , double axes_d_x, double axes_d_y, double axes_d_z
           , double start_pos_e, double axes_d_e
@@ -667,19 +667,12 @@ moveq_add(struct moveq *mq, int is_kinematic_move, double move_d
     struct move *m = move_alloc();
 
     m->accel_order = accel_order;
-    m->is_kinematic_move = is_kinematic_move;
     m->move_d = move_d;
 
-    m->start_pos.x = start_pos_x;
-    m->start_pos.y = start_pos_y;
-    m->start_pos.z = start_pos_z;
-    m->extrude_pos = start_pos_e;
-    double inv_kin_move_d = 1. / sqrt(axes_d_x*axes_d_x + axes_d_y*axes_d_y
-                                      + axes_d_z*axes_d_z);
-    m->axes_r.x = axes_d_x * inv_kin_move_d;
-    m->axes_r.y = axes_d_y * inv_kin_move_d;
-    m->axes_r.z = axes_d_z * inv_kin_move_d;
-    m->extrude_d = axes_d_e;
+    move_fill_pos(m
+            , start_pos_x, start_pos_y, start_pos_z
+            , axes_d_x, axes_d_y, axes_d_z
+            , start_pos_e, axes_d_e);
 
     fill_accel_group(&m->default_accel, m, accel, jerk, min_jerk_limit_time);
     m->max_cruise_v2 = velocity * velocity;
@@ -753,12 +746,12 @@ moveq_getmove(struct moveq *mq, double print_time, struct move *m)
         return ERROR_RET;
     }
     // Generate step times for the move
-    move_fill(move, print_time,
-        accel_t, accel_offset_t, total_accel_t,
-        cruise_t,
-        decel_t, decel_offset_t, total_decel_t,
-        start_accel_v, move->cruise_v,
-        effective_accel, effective_decel);
+    move_fill_trap(move, print_time,
+            accel_t, accel_offset_t, total_accel_t,
+            cruise_t,
+            decel_t, decel_offset_t, total_decel_t,
+            start_accel_v, move->cruise_v,
+            effective_accel, effective_decel);
     *m = *move;
     // Remove processed move from the queue
     list_del(&move->node);

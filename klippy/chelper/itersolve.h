@@ -38,7 +38,6 @@ struct move {
     double extrude_pos, extrude_d;
     double move_d;
     int accel_order;
-    int is_kinematic_move;
 
     struct accel_group accel_group, decel_group, default_accel;
     struct accel_group safe_decel;
@@ -50,12 +49,16 @@ struct move {
 };
 
 struct move *move_alloc(void);
-void move_fill(struct move *m, double print_time
-               , double accel_t, double accel_offset_t, double total_accel_t
-               , double cruise_t
-               , double decel_t, double decel_offset_t, double total_decel_t
-               , double start_accel_v, double cruise_v
-               , double accel, double decel);
+void move_fill_pos(struct move *m
+                   , double start_pos_x, double start_pos_y, double start_pos_z
+                   , double axes_d_x, double axes_d_y, double axes_d_z
+                   , double start_pos_e, double axes_d_e);
+void move_fill_trap(struct move *m, double print_time
+        , double accel_t, double accel_offset_t, double total_accel_t
+        , double cruise_t
+        , double decel_t, double decel_offset_t, double total_decel_t
+        , double start_accel_v, double cruise_v
+        , double accel, double decel);
 double move_get_distance(struct move *m, double move_time);
 struct coord move_get_coord(struct move *m, double move_time);
 double move_get_time(struct move *m, double move_distance);

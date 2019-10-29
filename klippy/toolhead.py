@@ -85,16 +85,16 @@ LOOKAHEAD_FLUSH_TIME = 0.250
 class MoveQueue:
     def __init__(self, toolhead):
         self.extruder_lookahead = None
+        self.queue = []
+        self.junction_flush = LOOKAHEAD_FLUSH_TIME
         self.toolhead = toolhead
         self.ffi_lib = toolhead.ffi_lib
         self.cqueue = toolhead.ffi_main.gc(self.ffi_lib.moveq_alloc()
                 , self.ffi_lib.free)
         self.moveq_getmove = self.ffi_lib.moveq_getmove
-        self.reset()
     def reset(self):
-        self.prev_move = None
+        del self.queue[:]
         self.ffi_lib.moveq_reset(self.cqueue)
-        self.queued = 0
         self.junction_flush = LOOKAHEAD_FLUSH_TIME
     def set_flush_time(self, flush_time):
         self.junction_flush = flush_time
@@ -102,29 +102,31 @@ class MoveQueue:
         self.extruder_lookahead = extruder.lookahead
     def flush(self, lazy=False):
         self.junction_flush = LOOKAHEAD_FLUSH_TIME
-        flush_count = self.ffi_lib.moveq_flush(self.cqueue, lazy)
-        if flush_count < 0:
+        queue = self.queue
+        move_count = self.ffi_lib.moveq_flush(self.cqueue, lazy)
+        if move_count < 0:
             raise error('Internal error in moveq_flush')
         toolhead = self.toolhead
-        cmove = toolhead.cmove
-        # Generate step times for the moves
-        for i in range(flush_count):
+        # Generate step times for all moves ready to be flushed
+        for move in queue[:move_count]:
             next_move_time = toolhead.get_next_move_time()
-            total_move_t = self.moveq_getmove(self.cqueue, next_move_time, cmove)
+            total_move_t = self.moveq_getmove(self.cqueue
+                    , next_move_time , move.cmove)
             if total_move_t < 0:
                 raise error('Internal error in moveq_getmove')
-            if cmove.is_kinematic_move:
-                toolhead.kin.move(next_move_time, cmove)
-            if cmove.extrude_d:
-                toolhead.extruder.move(next_move_time, cmove)
+            if move.is_kinematic_move:
+                toolhead.kin.move(next_move_time, move)
+            if move.axes_d[3]:
+                toolhead.extruder.move(next_move_time, move)
             toolhead.update_move_time(total_move_t)
-        self.queued -= flush_count
+        # Remove processed moves from the queue
+        del queue[:move_count]
 
     def add_move(self, move):
-        if self.prev_move:
-            move.calc_junction(self.prev_move)
-        ret = self.ffi_lib.moveq_add(self.cqueue,
-                move.is_kinematic_move, move.move_d,
+        if self.queue:
+            move.calc_junction(self.queue[-1])
+        self.queue.append(move)
+        ret = self.ffi_lib.moveq_add(self.cqueue, move.move_d,
                 move.start_pos[0], move.start_pos[1], move.start_pos[2],
                 move.axes_d[0], move.axes_d[1], move.axes_d[2],
                 move.start_pos[3], move.axes_d[3],
@@ -133,12 +135,10 @@ class MoveQueue:
                 move.jerk, move.min_jerk_limit_time)
         if ret:
             raise error('Internal error in moveq_add')
-        self.queued += 1
         self.junction_flush -= move.min_move_t
         if self.junction_flush <= 0.:
             # Enough moves have been queued to reach the target flush time.
             self.flush(lazy=True)
-        self.prev_move = move
 
 STALL_TIME = 0.100
 
@@ -428,7 +428,7 @@ class ToolHead:
             self.print_time, max(buffer_time, 0.), self.print_stall)
     def check_busy(self, eventtime):
         est_print_time = self.mcu.estimated_print_time(eventtime)
-        lookahead_empty = not self.move_queue.queued
+        lookahead_empty = not self.move_queue.queue
         return self.print_time, est_print_time, lookahead_empty
     def get_status(self, eventtime):
         print_time = self.print_time

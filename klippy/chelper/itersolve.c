@@ -26,14 +26,6 @@ move_alloc(void)
     return m;
 }
 
-void __visible
-move_set_accel_order(struct move *m, int accel_order)
-{
-    memset(&m->accel, 0, sizeof(m->accel));
-    memset(&m->decel, 0, sizeof(m->decel));
-    m->accel_order = accel_order;
-}
-
 static void
 move_fill_bezier2(struct move_accel *ma, double start_accel_v
                   , double effective_accel, double accel_offset_t)
@@ -86,14 +78,32 @@ move_fill_bezier6(struct move_accel *ma, double start_accel_v
     ma->c0 = -move_eval_accel(ma, 0);
 }
 
+void __visible
+move_fill_pos(struct move *m
+              , double start_pos_x, double start_pos_y, double start_pos_z
+              , double axes_d_x, double axes_d_y, double axes_d_z
+              , double start_pos_e, double axes_d_e)
+{
+    m->start_pos.x = start_pos_x;
+    m->start_pos.y = start_pos_y;
+    m->start_pos.z = start_pos_z;
+    m->extrude_pos = start_pos_e;
+    double inv_kin_move_d = 1. / sqrt(axes_d_x*axes_d_x + axes_d_y*axes_d_y
+                                      + axes_d_z*axes_d_z);
+    m->axes_r.x = axes_d_x * inv_kin_move_d;
+    m->axes_r.y = axes_d_y * inv_kin_move_d;
+    m->axes_r.z = axes_d_z * inv_kin_move_d;
+    m->extrude_d = axes_d_e;
+}
+
 // Populate a 'struct move' with a velocity trapezoid
 void __visible
-move_fill(struct move *m, double print_time
-          , double accel_t, double accel_offset_t, double total_accel_t
-          , double cruise_t
-          , double decel_t, double decel_offset_t, double total_decel_t
-          , double start_accel_v, double cruise_v
-          , double effective_accel, double effective_decel)
+move_fill_trap(struct move *m, double print_time
+               , double accel_t, double accel_offset_t, double total_accel_t
+               , double cruise_t
+               , double decel_t, double decel_offset_t, double total_decel_t
+               , double start_accel_v, double cruise_v
+               , double effective_accel, double effective_decel)
 {
     // Setup velocity trapezoid
     m->print_time = print_time;
@@ -155,7 +165,7 @@ move_get_coord(struct move *m, double move_time)
  * Iterative solver
  ****************************************************************/
 
-double __visible move_get_time(struct move *m, double move_distance)
+double move_get_time(struct move *m, double move_distance)
 {
     double low = 0;
     double high = m->move_t;

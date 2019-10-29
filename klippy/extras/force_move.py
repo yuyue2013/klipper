@@ -29,7 +29,8 @@ class ForceMove:
         # Setup iterative solver
         ffi_main, ffi_lib = chelper.get_ffi()
         self.cmove = ffi_main.gc(ffi_lib.move_alloc(), ffi_lib.free)
-        self.move_fill = ffi_lib.move_fill
+        self.move_fill_pos = ffi_lib.move_fill_pos
+        self.move_fill_trap = ffi_lib.move_fill_trap
         self.stepper_kinematics = ffi_main.gc(
             ffi_lib.cartesian_stepper_alloc('x'), ffi_lib.free)
         # Register commands
@@ -68,8 +69,12 @@ class ForceMove:
         prev_sk = stepper.set_stepper_kinematics(self.stepper_kinematics)
         stepper.set_position((0., 0., 0.))
         accel_t, cruise_t, cruise_v = calc_move_time(dist, speed, accel)
-        self.move_fill(self.cmove, print_time, accel_t, cruise_t, accel_t,
-                       0., 0., 0., dist, 0., 0., 0., cruise_v, accel, accel)
+        self.move_fill_trap(self.cmove, print_time,
+                            accel_t, 0., accel_t,
+                            cruise_t,
+                            accel_t, 0., accel_t,
+                            0., cruise_v, accel, accel)
+        self.move_fill_pos(self.cmove, 0., 0., 0., dist, 0., 0., 0., 0.)
         stepper.step_itersolve(self.cmove)
         stepper.set_stepper_kinematics(prev_sk)
         toolhead.dwell(accel_t + cruise_t + accel_t)

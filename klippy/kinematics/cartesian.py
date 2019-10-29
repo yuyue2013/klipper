@@ -87,10 +87,10 @@ class CartKinematics:
         for rail in self.dual_carriage_rails:
             rail.motor_enable(print_time, 0)
         self.need_motor_enable = True
-    def _check_motor_enable(self, print_time, cmove):
+    def _check_motor_enable(self, print_time, move):
         need_motor_enable = False
-        for rail, r in zip(self.rails, ['x', 'y', 'z']):
-            if getattr(cmove.axes_r, r):
+        for i, rail in enumerate(self.rails):
+            if move.axes_d[i]:
                 rail.motor_enable(print_time, 1)
             need_motor_enable |= not rail.is_motor_enabled()
         self.need_motor_enable = need_motor_enable
@@ -118,12 +118,12 @@ class CartKinematics:
         z_ratio = move.move_d / abs(move.axes_d[2])
         move.limit_speed(
             self.max_z_velocity * z_ratio, self.max_z_accel * z_ratio)
-    def move(self, print_time, cmove):
+    def move(self, print_time, move):
         if self.need_motor_enable:
-            self._check_motor_enable(print_time, cmove)
-        for rail, r in zip(self.rails, ['x', 'y', 'z']):
-            if getattr(cmove.axes_r, r):
-                rail.step_itersolve(cmove)
+            self._check_motor_enable(print_time, move)
+        for i, rail in enumerate(self.rails):
+            if move.axes_d[i]:
+                rail.step_itersolve(move.cmove)
     def get_status(self):
         return {'homed_axes': "".join([a
                     for a, (l, h) in zip("XYZ", self.limits) if l <= h])

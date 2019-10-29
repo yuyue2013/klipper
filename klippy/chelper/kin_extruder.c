@@ -89,7 +89,7 @@ extruder_bezier6(struct move_accel *ma, double start_accel_v, double extra_v
 // Populate a 'struct move' with an extruder velocity trapezoid
 // from kinematic velocity trapezoid
 void __visible
-extruder_move_fill(const struct move *kin, struct move *extr)
+extruder_move_fill(struct move *extr, const struct move *kin)
 {
     *extr = *kin;
     double extra_accel_v = 0., extra_decel_v = 0.;

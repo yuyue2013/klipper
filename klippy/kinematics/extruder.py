@@ -167,15 +167,16 @@ class PrinterExtruder:
                     return i
             move.extrude_max_corner_v = max_corner_v
         return flush_count
-    def move(self, print_time, cmove):
+    def move(self, print_time, move):
         if self.need_motor_enable:
             self.stepper.motor_enable(print_time, 1)
             self.need_motor_enable = False
-
+        axis_d = move.axes_d[3]
+        start_pos = self.extrude_pos
         # Generate steps
-        self.extruder_move_fill(cmove, self.cmove)
+        self.extruder_move_fill(self.cmove, move.cmove)
         self.stepper.step_itersolve(self.cmove)
-        self.extrude_pos += cmove.extrude_d
+        self.extrude_pos = start_pos + axis_d
     cmd_SET_PRESSURE_ADVANCE_help = "Set pressure advance parameters"
     def cmd_default_SET_PRESSURE_ADVANCE(self, params):
         extruder = self.printer.lookup_object('toolhead').get_extruder()

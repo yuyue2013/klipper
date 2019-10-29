@@ -66,11 +66,11 @@ class CoreXYKinematics:
         for rail in self.rails:
             rail.motor_enable(print_time, 0)
         self.need_motor_enable = True
-    def _check_motor_enable(self, print_time, axes_r):
-        if axes_r.x or axes_r.y:
+    def _check_motor_enable(self, print_time, move):
+        if move.axes_d[0] or move.axes_d[1]:
             self.rails[0].motor_enable(print_time, 1)
             self.rails[1].motor_enable(print_time, 1)
-        if axes_r.z:
+        if move.axes_d[2]:
             self.rails[2].motor_enable(print_time, 1)
         need_motor_enable = False
         for rail in self.rails:
@@ -100,15 +100,16 @@ class CoreXYKinematics:
         z_ratio = move.move_d / abs(move.axes_d[2])
         move.limit_speed(
             self.max_z_velocity * z_ratio, self.max_z_accel * z_ratio)
-    def move(self, print_time, cmove):
-        axes_r = cmove.axes_r
+    def move(self, print_time, move):
         if self.need_motor_enable:
-            self._check_motor_enable(print_time, axes_r)
+            self._check_motor_enable(print_time, move)
+        axes_d = move.axes_d
+        cmove = move.cmove
         rail_x, rail_y, rail_z = self.rails
-        if axes_r.x or axes_r.y:
+        if axes_d[0] or axes_d[1]:
             rail_x.step_itersolve(cmove)
             rail_y.step_itersolve(cmove)
-        if axes_r.z:
+        if axes_d[2]:
             rail_z.step_itersolve(cmove)
     def get_status(self):
         return {'homed_axes': "".join([a

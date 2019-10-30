@@ -26,6 +26,13 @@ move_alloc(void)
     return m;
 }
 
+static inline double
+max_accel_comp(double accel_comp, double accel_t)
+{
+    // Limit compensation to maintain velocity > 0 (no movement backwards)
+    return fmin(accel_comp, accel_t * accel_t * 0.159);
+}
+
 static void
 move_fill_bezier2(struct move_accel *ma, double start_accel_v
                   , double effective_accel, double accel_offset_t)
@@ -39,7 +46,8 @@ move_fill_bezier2(struct move_accel *ma, double start_accel_v
 // Determine the coefficients for a 4th order bezier position function
 static void
 move_fill_bezier4(struct move_accel *ma, double start_accel_v
-        , double effective_accel, double total_accel_t, double accel_offset_t)
+        , double effective_accel, double total_accel_t, double accel_offset_t
+        , double accel_comp)
 {
     ma->offset_t = accel_offset_t;
     if (!total_accel_t) {
@@ -51,7 +59,8 @@ move_fill_bezier4(struct move_accel *ma, double start_accel_v
     double accel_div_accel_t2 = accel_div_accel_t * inv_accel_t;
     ma->c4 = -.5 * accel_div_accel_t2;
     ma->c3 = accel_div_accel_t;
-    ma->c1 = start_accel_v;
+    ma->c2 = -6. * accel_div_accel_t2 * accel_comp;
+    ma->c1 = start_accel_v + 6. * accel_div_accel_t * accel_comp;
     ma->c0 = 0;
     ma->c0 = -move_eval_accel(ma, 0);
 }
@@ -59,7 +68,8 @@ move_fill_bezier4(struct move_accel *ma, double start_accel_v
 // Determine the coefficients for a 6th order bezier position function
 static void
 move_fill_bezier6(struct move_accel *ma, double start_accel_v
-        , double effective_accel, double total_accel_t, double accel_offset_t)
+        , double effective_accel, double total_accel_t, double accel_offset_t
+        , double accel_comp)
 {
     ma->offset_t = accel_offset_t;
     if (!total_accel_t) {
@@ -72,7 +82,9 @@ move_fill_bezier6(struct move_accel *ma, double start_accel_v
     double accel_div_accel_t4 = accel_div_accel_t3 * inv_accel_t;
     ma->c6 = accel_div_accel_t4;
     ma->c5 = -3. * accel_div_accel_t3;
-    ma->c4 = 2.5 * accel_div_accel_t2;
+    ma->c4 = 2.5 * accel_div_accel_t2 + 30. * accel_div_accel_t4 * accel_comp;
+    ma->c3 = -60. * accel_div_accel_t3 * accel_comp;
+    ma->c2 = 30. * accel_div_accel_t2 * accel_comp;
     ma->c1 = start_accel_v;
     ma->c0 = 0;
     ma->c0 = -move_eval_accel(ma, 0);
@@ -103,7 +115,8 @@ move_fill_trap(struct move *m, double print_time
                , double cruise_t
                , double decel_t, double decel_offset_t, double total_decel_t
                , double start_accel_v, double cruise_v
-               , double effective_accel, double effective_decel)
+               , double effective_accel, double effective_decel
+               , double accel_comp)
 {
     // Setup velocity trapezoid
     m->print_time = print_time;
@@ -115,14 +128,18 @@ move_fill_trap(struct move *m, double print_time
     m->cruise_v = cruise_v;
     if (m->accel_order == 4) {
         move_fill_bezier4(&m->accel, start_accel_v, effective_accel
-                , total_accel_t, accel_offset_t);
+                , total_accel_t, accel_offset_t
+                , max_accel_comp(accel_comp, total_accel_t));
         move_fill_bezier4(&m->decel, cruise_v, -effective_decel
-                , total_decel_t, decel_offset_t);
+                , total_decel_t, decel_offset_t
+                , max_accel_comp(accel_comp, total_decel_t));
     } else if (m->accel_order == 6) {
         move_fill_bezier6(&m->accel, start_accel_v, effective_accel
-                , total_accel_t, accel_offset_t);
+                , total_accel_t, accel_offset_t
+                , max_accel_comp(accel_comp, total_accel_t));
         move_fill_bezier6(&m->decel, cruise_v, -effective_decel
-                , total_decel_t, decel_offset_t);
+                , total_decel_t, decel_offset_t
+                , max_accel_comp(accel_comp, total_decel_t));
     } else {
         move_fill_bezier2(&m->accel, start_accel_v, effective_accel
                 , accel_offset_t);

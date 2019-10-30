@@ -73,7 +73,7 @@ class ForceMove:
                             accel_t, 0., accel_t,
                             cruise_t,
                             accel_t, 0., accel_t,
-                            0., cruise_v, accel, accel)
+                            0., cruise_v, accel, accel, 0.)
         self.move_fill_pos(self.cmove, 0., 0., 0., dist, 0., 0., 0., 0.)
         stepper.step_itersolve(self.cmove)
         stepper.set_stepper_kinematics(prev_sk)

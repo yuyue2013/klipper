@@ -31,7 +31,7 @@ int moveq_add(struct moveq *mq, double move_d
               , double start_pos_e, double axes_d_e
               , double junction_max_v2, double velocity
               , int accel_order, double accel, double smoothed_accel
-              , double jerk, double min_jerk_limit_time);
+              , double jerk, double min_jerk_limit_time, double accel_comp);
 int moveq_flush(struct moveq *mq, int lazy);
 double moveq_getmove(struct moveq *mq, double print_time, struct move *m);
 

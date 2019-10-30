@@ -57,7 +57,7 @@ class ManualStepper:
             dist, speed, accel)
         self.move_fill_trap(self.cmove, self.next_cmd_time,
                             accel_t, 0, accel_t, cruise_t, accel_t, 0, accel_t,
-                            0., cruise_v, accel, accel)
+                            0., cruise_v, accel, accel, 0.)
         self.move_fill_pos(self.cmove, cp, 0., 0., dist, 0., 0., 0., 0.)
         self.stepper.step_itersolve(self.cmove)
         self.next_cmd_time += accel_t + cruise_t + accel_t

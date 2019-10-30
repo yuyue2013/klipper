@@ -38,6 +38,7 @@ struct move {
     double extrude_pos, extrude_d;
     double move_d;
     int accel_order;
+    double accel_comp;
 
     struct accel_group accel_group, decel_group, default_accel;
     struct accel_group safe_decel;
@@ -58,7 +59,7 @@ void move_fill_trap(struct move *m, double print_time
         , double cruise_t
         , double decel_t, double decel_offset_t, double total_decel_t
         , double start_accel_v, double cruise_v
-        , double accel, double decel);
+        , double accel, double decel, double accel_comp);
 double move_get_distance(struct move *m, double move_time);
 struct coord move_get_coord(struct move *m, double move_time);
 double move_get_time(struct move *m, double move_distance);

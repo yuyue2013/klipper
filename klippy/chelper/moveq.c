@@ -237,7 +237,8 @@ process_next_accel(struct moveq *mq, struct accel_group *ag
     if (prev_accel) prev_accel->next_accel = ag;
     set_max_start_v2(&new_jp->accel, start_v2);
     if (unlikely(!prev_accel || ag->move->accel_order == 2
-                || prev_accel->move->accel_order != ag->move->accel_order)) {
+                || prev_accel->move->accel_order != ag->move->accel_order
+                || prev_accel->move->accel_comp != ag->move->accel_comp)) {
         reset_junctions(mq, start_v2);
     }
     const double junction_accel_limit_v2 = junction_max_v2 * (53. / 54.);
@@ -307,7 +308,7 @@ set_accel(struct accel_group* combined, double cruise_v2
     move_fill_trap(&m, 0.,
             combined_accel_t, 0., combined_accel_t,
             0., 0., 0., 0.,
-            start_accel_v, cruise_v, effective_accel, 0.);
+            start_accel_v, cruise_v, effective_accel, 0., 0.);
     double remaining_accel_t = combined_accel_t;
     double remaining_accel_d = combined_accel_d;
     struct accel_group *a = combined->start_accel;
@@ -662,11 +663,12 @@ moveq_add(struct moveq *mq, double move_d
           , double start_pos_e, double axes_d_e
           , double junction_max_v2, double velocity
           , int accel_order, double accel, double smoothed_accel
-          , double jerk, double min_jerk_limit_time)
+          , double jerk, double min_jerk_limit_time, double accel_comp)
 {
     struct move *m = move_alloc();
 
     m->accel_order = accel_order;
+    m->accel_comp = accel_comp;
     m->move_d = move_d;
 
     move_fill_pos(m
@@ -751,7 +753,7 @@ moveq_getmove(struct moveq *mq, double print_time, struct move *m)
             cruise_t,
             decel_t, decel_offset_t, total_decel_t,
             start_accel_v, move->cruise_v,
-            effective_accel, effective_decel);
+            effective_accel, effective_decel, m->accel_comp);
     *m = *move;
     // Remove processed move from the queue
     list_del(&move->node);

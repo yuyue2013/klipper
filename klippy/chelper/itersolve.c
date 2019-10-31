@@ -50,10 +50,8 @@ move_fill_bezier4(struct move_accel *ma, double start_accel_v
         , double accel_comp)
 {
     ma->offset_t = accel_offset_t;
-    if (!total_accel_t) {
-        ma->c4 = ma->c3 = ma->c1 = ma->c0 = 0.;
+    if (!total_accel_t)
         return;
-    }
     double inv_accel_t = 1. / total_accel_t;
     double accel_div_accel_t = effective_accel * inv_accel_t;
     double accel_div_accel_t2 = accel_div_accel_t * inv_accel_t;
@@ -72,10 +70,8 @@ move_fill_bezier6(struct move_accel *ma, double start_accel_v
         , double accel_comp)
 {
     ma->offset_t = accel_offset_t;
-    if (!total_accel_t) {
-        ma->c6 = ma->c5 = ma->c4 = ma->c1 = ma->c0 = 0.;
+    if (!total_accel_t)
         return;
-    }
     double inv_accel_t = 1. / total_accel_t;
     double accel_div_accel_t2 = effective_accel * inv_accel_t * inv_accel_t;
     double accel_div_accel_t3 = accel_div_accel_t2 * inv_accel_t;
@@ -100,11 +96,13 @@ move_fill_pos(struct move *m
     m->start_pos.y = start_pos_y;
     m->start_pos.z = start_pos_z;
     m->extrude_pos = start_pos_e;
-    double inv_kin_move_d = 1. / sqrt(axes_d_x*axes_d_x + axes_d_y*axes_d_y
-                                      + axes_d_z*axes_d_z);
-    m->axes_r.x = axes_d_x * inv_kin_move_d;
-    m->axes_r.y = axes_d_y * inv_kin_move_d;
-    m->axes_r.z = axes_d_z * inv_kin_move_d;
+    if (m->is_kinematic_move) {
+        double inv_kin_move_d = 1. / sqrt(axes_d_x*axes_d_x + axes_d_y*axes_d_y
+                + axes_d_z*axes_d_z);
+        m->axes_r.x = axes_d_x * inv_kin_move_d;
+        m->axes_r.y = axes_d_y * inv_kin_move_d;
+        m->axes_r.z = axes_d_z * inv_kin_move_d;
+    }
     m->extrude_d = axes_d_e;
 }
 
@@ -126,6 +124,8 @@ move_fill_trap(struct move *m, double print_time
 
     // Setup for accel/cruise/decel phases
     m->cruise_v = cruise_v;
+    memset(&m->accel, 0, sizeof(m->accel));
+    memset(&m->decel, 0, sizeof(m->decel));
     if (m->accel_order == 4) {
         move_fill_bezier4(&m->accel, start_accel_v, effective_accel
                 , total_accel_t, accel_offset_t

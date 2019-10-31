@@ -118,7 +118,19 @@ class MoveQueue:
             if move.is_kinematic_move:
                 toolhead.kin.move(next_move_time, move)
             if move.axes_d[3]:
+                # NB: acceleration compensation reduces duration of moves in
+                # the beginning of acceleration/deceleration move group. This
+                # can make extruder move be in the 'future' from next_move_time
+                # because the extruder kinematics does not follow acceleration
+                # compensation, which extruder takes care of by adjusting
+                # print_time accordingly.
                 toolhead.extruder.move(next_move_time, move)
+            # Note that it is safe to flush all mcu(s) up to next_move_time
+            # + total_move_t, but the last (few) exturder moves may not be fully
+            # flushed as a result. Still, as the whole acceleration/deceleration
+            # move group is flushed at a time, all such discrepancies between
+            # kinematic and exturder move timings are eliminated by the end of
+            # the flush loop.
             toolhead.update_move_time(total_move_t)
         # Remove processed moves from the queue
         del queue[:move_count]
@@ -127,7 +139,8 @@ class MoveQueue:
         if self.queue:
             move.calc_junction(self.queue[-1])
         self.queue.append(move)
-        ret = self.ffi_lib.moveq_add(self.cqueue, move.move_d,
+        ret = self.ffi_lib.moveq_add(self.cqueue,
+                move.is_kinematic_move, move.move_d,
                 move.start_pos[0], move.start_pos[1], move.start_pos[2],
                 move.axes_d[0], move.axes_d[1], move.axes_d[2],
                 move.start_pos[3], move.axes_d[3],

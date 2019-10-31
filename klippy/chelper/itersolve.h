@@ -19,6 +19,7 @@ struct accel_group {
     double min_jerk_limit_time;
     double combined_d, accel_d;
     double accel_t, accel_offset_t, total_accel_t;
+    double uncomp_accel_t, uncomp_accel_offset_t;
     double start_accel_v;
     double effective_accel;
     struct accel_group *start_accel, *next_accel;
@@ -38,6 +39,7 @@ struct move {
     double extrude_pos, extrude_d;
     double move_d;
     int accel_order;
+    int is_kinematic_move;
     double accel_comp;
 
     struct accel_group accel_group, decel_group, default_accel;

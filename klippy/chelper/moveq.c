@@ -302,14 +302,25 @@ set_accel(struct accel_group* combined, double cruise_v2
         return ERROR_RET;
     }
     double effective_accel = calc_effective_accel(combined, cruise_v);
-    struct move m;
+    double accel_comp = combined->move->accel_comp;
+    struct move m, m_uncomp;
     memset(&m, 0, sizeof(m));
     m.accel_order = combined->move->accel_order;
     move_fill_trap(&m, 0.,
             combined_accel_t, 0., combined_accel_t,
             0., 0., 0., 0.,
-            start_accel_v, cruise_v, effective_accel, 0., 0.);
+            start_accel_v, cruise_v, effective_accel, 0., accel_comp);
+    if (accel_comp) {
+        // Also computed uncompensated acceleration timings.
+        memset(&m_uncomp, 0, sizeof(m_uncomp));
+        m_uncomp.accel_order = combined->move->accel_order;
+        move_fill_trap(&m_uncomp, 0.,
+                combined_accel_t, 0., combined_accel_t,
+                0., 0., 0., 0.,
+                start_accel_v, cruise_v, effective_accel, 0., 0.);
+    }
     double remaining_accel_t = combined_accel_t;
+    double remaining_uncomp_accel_t = combined_accel_t;
     double remaining_accel_d = combined_accel_d;
     struct accel_group *a = combined->start_accel;
     for (;;) {
@@ -322,13 +333,30 @@ set_accel(struct accel_group* combined, double cruise_v2
             double next_pos = a->accel_d + combined_accel_d - remaining_accel_d;
             if (time_offset_from_start) {
                 a->accel_offset_t = combined_accel_t - remaining_accel_t;
+                a->uncomp_accel_offset_t = combined_accel_t
+                    - remaining_uncomp_accel_t;
                 a->accel_t = move_get_time(&m, next_pos) - a->accel_offset_t;
+                if (accel_comp) {
+                    a->uncomp_accel_t = move_get_time(&m_uncomp, next_pos)
+                        - a->uncomp_accel_offset_t;
+                } else {
+                    a->uncomp_accel_t = a->accel_t;
+                }
             } else {
                 a->accel_offset_t =
                     combined_accel_t - move_get_time(&m, next_pos);
                 a->accel_t = remaining_accel_t - a->accel_offset_t;
+                if (accel_comp) {
+                    a->uncomp_accel_offset_t =
+                        combined_accel_t - move_get_time(&m_uncomp, next_pos);
+                } else {
+                    a->uncomp_accel_offset_t = a->accel_offset_t;
+                }
+                a->uncomp_accel_t = remaining_uncomp_accel_t
+                    - a->uncomp_accel_offset_t;
             }
             remaining_accel_t -= a->accel_t;
+            remaining_uncomp_accel_t -= a->uncomp_accel_t;
             remaining_accel_d -= a->move->move_d;
         }
         if (unlikely(a == combined)) break;
@@ -657,7 +685,7 @@ forward_pass(struct moveq *mq, struct move *end, int lazy, int *ret)
 }
 
 int __visible
-moveq_add(struct moveq *mq, double move_d
+moveq_add(struct moveq *mq, int is_kinematic_move, double move_d
           , double start_pos_x, double start_pos_y, double start_pos_z
           , double axes_d_x, double axes_d_y, double axes_d_z
           , double start_pos_e, double axes_d_e
@@ -668,8 +696,9 @@ moveq_add(struct moveq *mq, double move_d
     struct move *m = move_alloc();
 
     m->accel_order = accel_order;
-    m->accel_comp = accel_comp;
+    m->accel_comp = is_kinematic_move ? accel_comp : 0.;
     m->move_d = move_d;
+    m->is_kinematic_move = is_kinematic_move;
 
     move_fill_pos(m
             , start_pos_x, start_pos_y, start_pos_z
@@ -753,7 +782,7 @@ moveq_getmove(struct moveq *mq, double print_time, struct move *m)
             cruise_t,
             decel_t, decel_offset_t, total_decel_t,
             start_accel_v, move->cruise_v,
-            effective_accel, effective_decel, m->accel_comp);
+            effective_accel, effective_decel, move->accel_comp);
     *m = *move;
     // Remove processed move from the queue
     list_del(&move->node);

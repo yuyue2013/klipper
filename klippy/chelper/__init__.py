@@ -66,7 +66,7 @@ defs_itersolve = """
 defs_moveq = """
     struct moveq *moveq_alloc(void);
     void moveq_reset(struct moveq *mq);
-    int moveq_add(struct moveq *mq, double move_d
+    int moveq_add(struct moveq *mq, int is_kinematic_move, double move_d
         , double start_pos_x, double start_pos_y, double start_pos_z
         , double axes_d_x, double axes_d_y, double axes_d_z
         , double start_pos_e, double axes_d_e

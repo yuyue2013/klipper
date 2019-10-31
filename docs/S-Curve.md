@@ -26,6 +26,33 @@ Note that ghosting usually has mechanical origins: insufficiently rigid printer
 frame, non-tight or too springy belts, alignment issues of mechanical parts,
 heavy moving mass, etc. Those should be checked and fixed first.
 
+## Acceleration compensation
+
+As the toolhead accelerates or decelerates, it can deviate from the commanded
+trajectory due to flex in belts and small frame deformations. When accelerating,
+it usually 'lags' from the commanded position, and when decelerating -
+overshoots it a bit (illustration with ringing at 40 Hz):
+
+![Toolhead cornering](img/toolhead-cornering.png)
+
+This effect can impact the quality of the corners even at small square corner
+velocities and increase the ringing. S-Curve acceleration has an experimental
+mode called acceleration compensation which can help to mitigate this issue to
+some degree. The approach has certain limitations:
+
+- Works well only if the resonance frequencies on X and Y axes are sufficiently
+  close (the difference between min and max frequency should be not larger than
+  around 30-40%);
+- It is rather sensitive to tuning the compensation parameter (unlike jerk
+  limit), it should preferably be within ~20% of optimal value for each axis;
+- Can compensate only acceleration along the move direction, does not handle
+  centripetal acceleration, does not help with cornering velocity;
+- Supports well only AO=6; although AO=4 is also implemented, it is not so much
+  recommended.
+
+On the positive side, it works for printers with any kinematics.
+
+
 Enable S-Curve acceleration
 ===========================
 
@@ -94,6 +121,7 @@ few parameters:
 * [Square corner velocity](Kinematics.md#look-ahead)
 * Maximum jerk (if S-Curve is enabled)
 * Acceleration order
+* Acceleration compensation (optional)
 
 Maximum acceleration and maximum velocity do not have significant impact
 on the ringing in this mode and can be set to the values suggested by the
@@ -225,8 +253,57 @@ velocity changes, decrease max_jerk value.
 
 Keep in mind that there is no well-defined upper limit on the maximum jerk
 value, except when using Pressure Advance. Still, the practical range of values
-to choose max_jerk from is from 10'000 mm/sec^3 to around 100'000 - 300'000
+to choose max_jerk from is from 10'000 mm/sec^3 to around 100'000 - 1'000'000
 mm/sec^3 depending on the printer setup and hardware.
+
+### Acceleration compensation tuning
+
+The feature is controlled by `accel_compensation` parameter in `[printer]`
+section, or via `SET_VELOCITY_LIMIT ACCEL_COMPENSATION=...` command. The theory
+suggests the best value for accel_compensation = 1 / (2 π f)^2 with f - the
+resonance (ringing) frequency. For example, for 50 Hz ringing frequency
+accel_compensation ~= 0.00001 (sec^2). If the ringing frequencies are different,
+choose a value in between, closer to higher frequency - this will overcompensate
+the higher frequency, and undercompensate the lower frequency. Still, it is
+better to fine-tune this parameter to get the best results.
+
+**Tuning process**
+
+Some prerequisites:
+
+- measure the ringing frequency(-ies) as described above;
+- tune the square corner velocity until you get acceptable results;
+- compute `min_jerk_limit_time` and `max_jerk` for the baseline;
+- store these parameters in the config.
+
+Now set the desired acceleration, e.g.:
+`SET_VELOCITY_LIMIT ACCEL=5000 ACCEL_TO_DECEL=3000`. Set very high max jerk
+parameter, e.g. `SET_VELOCITY_LIMIT JERK=1000000`. Print the test model
+increasing the acceleration compensation every 5 mm. It is a good idea to cover
+at least the range of values [0.5 / (2 π f<sub>max</sub>)<sup>2</sup>,
+1.5 / (2 π f<sub>min</sub>)<sup>2</sup>]. For example, if the printer has
+ringing frequencies 30 Hz and 50 Hz it is good to cover ~ [0.000005, 0.00004]:
+on the test model of 60 mm height, start with
+`SET_VELOCITY_LIMIT ACCEL_COMPENSATION=0.000005`, then increase it by
+0.000003 every 5 mm. `TUNING_TOWER` command can help with the tuning:
+for this example just issue the command `TUNING_TOWER COMMAND=SET_VELOCITY_LIMIT
+PARAMETER=ACCEL_COMPENSATION START=0.0000035 FACTOR=0.0000006 BAND=5` at the
+beginning of your test print. Note that it is important to use `BAND` parameter
+in vase mode, because every move has a different height.
+
+Once a range of promising values for acceleration compensation is determined,
+repeat the test on the narrower range to determine the best value that works
+reasonably well for both axes. If you do not see any improvement, or ringing
+suppression happens at different values for X and Y axis - acceleration
+compensation is unlikely to work for your printer.
+
+Notice that if the results on the previous step are not yet perfect - ringing
+is suppressed, but only partially - you can still continue to the next step.
+Now you need to tune the JERK parameter. Set the chosen acceleration
+compensation parameter, then print the test model increasing JERK parameter.
+For example, one can start with `SET_VELOCITY_LIMIT JERK=50000` and increase
+it by 50000 every 5 mm. Choose the maximum jerk value that still shows good
+quality results.
 
 
 S-Curve acceleration overview

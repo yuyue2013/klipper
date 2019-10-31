@@ -131,9 +131,10 @@ The following standard commands are supported:
 - `TURN_OFF_HEATERS`: Turn off all heaters.
 - `SET_VELOCITY_LIMIT [VELOCITY=<value>] [ACCEL=<value>]
   [ACCEL_TO_DECEL=<value>] [SQUARE_CORNER_VELOCITY=<value>]
-  [ACCEL_ORDER=<value>] [JERK=<value>]`: Modify the printer's velocity limits.
-  Note that one may only set values less than or equal to the limits
-  specified in the config file.
+  [ACCEL_ORDER=<value>] [JERK=<value>] [ACCEL_COMPENSATION=<value>]`:
+  Modify the printer's velocity limits. Note that one may only set values less
+  than or equal to the limits specified in the config file except ACCEL_ORDER,
+  JERK and ACCEL_COMPENSATION, which can be set to higher values.
 - `SET_HEATER_TEMPERATURE HEATER=<heater_name> [TARGET=<target_temperature>]`:
   Sets the target temperature for a heater. If a target temperature is
   not supplied, the target is 0.

@@ -119,19 +119,11 @@ calc_max_v2(const struct accel_group* ag)
     double a = 2./3. * start_v;
     double b = a*a*a;
     double c = dist * dist * ag->max_jerk / 3.;
-    double max_v;
-    if (unlikely(b * 54 < c)) {
-        // Make max_v monotonic over start_v: return the max velocity
-        // which works for any start_v velocity below the threshold.
-        // Combine algorithm relies on monotonicity of max_v(start_v).
-        max_v = 1.5 * pow(c*.5, 1./3.);
-    } else {
-        double d = sqrt(c * (c + 2. * b));
-        double e = pow(b + c + d, 1./3.);
-        if (e < EPSILON)
-            return start_v;
-        max_v = e + a*a / e - start_v / 3.;
-    }
+    double d = sqrt(c * (c + 2. * b));
+    double e = pow(b + c + d, 1./3.);
+    if (e < EPSILON)
+        return start_v;
+    double max_v = e + a*a / e - start_v / 3.;
     double max_v2 = max_v * max_v;
     if (unlikely(max_accel_v2 < max_v2))
         max_v2 = max_accel_v2;

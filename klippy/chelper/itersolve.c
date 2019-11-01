@@ -144,19 +144,16 @@ itersolve_generate_steps(struct stepper_kinematics *sk, double flush_time)
 {
     double last_flush_time = sk->last_flush_time;
     sk->last_flush_time = flush_time;
-    if (!sk->tq || list_empty(&sk->tq->moves))
+    if (!sk->tq)
         return 0;
+    trapq_check_sentinels(sk->tq);
     struct move *m = list_first_entry(&sk->tq->moves, struct move, node);
     for (;;) {
-        double move_print_time = m->print_time;
-        double move_end_time = move_print_time + m->move_t;
-        if (last_flush_time >= move_end_time) {
-            if (list_is_last(&m->node, &sk->tq->moves))
-                break;
+        double start = m->print_time, end = start + m->move_t;
+        if (last_flush_time >= end) {
             m = list_next_entry(m, node);
             continue;
         }
-        double start = move_print_time, end = move_end_time;
         if (start < last_flush_time)
             start = last_flush_time;
         if (start >= flush_time)
@@ -177,22 +174,19 @@ itersolve_generate_steps(struct stepper_kinematics *sk, double flush_time)
 double __visible
 itersolve_check_active(struct stepper_kinematics *sk, double flush_time)
 {
-    if (!sk->tq || list_empty(&sk->tq->moves))
+    if (!sk->tq)
         return 0.;
+    trapq_check_sentinels(sk->tq);
     struct move *m = list_first_entry(&sk->tq->moves, struct move, node);
-    while (sk->last_flush_time >= m->print_time + m->move_t) {
-        if (list_is_last(&m->node, &sk->tq->moves))
-            return 0.;
+    while (sk->last_flush_time >= m->print_time + m->move_t)
         m = list_next_entry(m, node);
-    }
-    while (m->print_time < flush_time) {
+    for (;;) {
         if (check_active(sk, m))
             return m->print_time;
-        if (list_is_last(&m->node, &sk->tq->moves))
+        if (flush_time <= m->print_time + m->move_t)
             return 0.;
         m = list_next_entry(m, node);
     }
-    return 0.;
 }
 
 void __visible

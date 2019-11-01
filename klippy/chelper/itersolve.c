@@ -29,7 +29,10 @@ move_alloc(void)
 static inline double
 max_accel_comp(double accel_comp, double accel_t)
 {
-    // Limit compensation to maintain velocity > 0 (no movement backwards)
+    // Limit compensation to maintain velocity > 0 (no movement backwards).
+    // 0.159 is a magic number - a solution of optimization problem for AO=6:
+    // maximum compensation value such that velocity >= 0 for any accel_t. It is
+    // slightly smaller than 1/6 - a solution of the same problem for AO=4.
     return fmin(accel_comp, accel_t * accel_t * 0.159);
 }
 

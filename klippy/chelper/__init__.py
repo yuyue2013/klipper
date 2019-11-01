@@ -101,7 +101,7 @@ defs_kin_winch = """
 
 defs_kin_extruder = """
     struct stepper_kinematics *extruder_stepper_alloc(void);
-    void extruder_move_fill(struct move *extr, const struct move *kin);
+    double extruder_move_fill(struct move *extr, const struct move *kin);
 """
 
 defs_serialqueue = """

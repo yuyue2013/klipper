@@ -122,7 +122,7 @@ extruder_move_fill_trap(struct move *m, double print_time
     m->decel_start_d = m->cruise_start_d + cruise_t * cruise_v;
 }
 
-void __visible
+double __visible
 extruder_move_fill(struct move *extr, const struct move *kin)
 {
     extr->accel_order = kin->accel_order;
@@ -144,11 +144,11 @@ extruder_move_fill(struct move *extr, const struct move *kin)
     double cruise_v = extr->cruise_v = kin->cruise_v * extrude_r;
 
     // NB: acceleration compensation reduces duration of moves in the beginning
-    // of acceleration/deceleration move group. The extruder kinematics does not
-    // follow acceleration compensation, so print_time must be adjusted
-    // accordingly to track the start of non-compensated move.
+    // of acceleration move group, and increases it in case of deceleration.
+    // The extruder kinematics does not follow acceleration compensation, so
+    // print_time must be adjusted accordingly to track the start and the
+    // duration of the non-compensated moves.
     double print_time = kin->print_time;
-    // NB: uncomp_accel_offset_t >= accel_offset_t always holds
     if (total_accel_t)
         print_time += accel_offset_t - accel->accel_offset_t;
     else if(total_decel_t)
@@ -161,4 +161,5 @@ extruder_move_fill(struct move *extr, const struct move *kin)
             start_accel_v, cruise_v,
             effective_accel, effective_decel);
     extr->extrude_pos = kin->extrude_pos;
+    return print_time + extr->move_t;
 }

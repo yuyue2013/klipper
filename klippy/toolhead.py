@@ -119,19 +119,18 @@ class MoveQueue:
                 toolhead.kin.move(next_move_time, move)
             if move.axes_d[3]:
                 # NB: acceleration compensation reduces duration of moves in
-                # the beginning of acceleration/deceleration move group. This
-                # can make extruder move be in the 'future' from next_move_time
-                # because the extruder kinematics does not follow acceleration
-                # compensation, which extruder takes care of by adjusting
-                # print_time accordingly.
-                toolhead.extruder.move(next_move_time, move)
-            # Note that it is safe to flush all mcu(s) up to next_move_time
-            # + total_move_t, but the last (few) exturder moves may not be fully
-            # flushed as a result. Still, as the whole acceleration/deceleration
-            # move group is flushed at a time, all such discrepancies between
-            # kinematic and exturder move timings are eliminated by the end of
-            # the flush loop.
-            toolhead.update_move_time(total_move_t)
+                # the beginning of acceleration move group, and increases it in
+                # case of deceleration. This can make extruder move be in the
+                # 'future' from next_move_time because the extruder kinematics
+                # does not follow acceleration compensation, which extruder
+                # takes care of by adjusting print_time accordingly.
+                extruder_commit_t = toolhead.extruder.move(next_move_time, move)
+            else:
+                extruder_commit_t = None
+            # Make sure to not flush beyond the time commited by the extruder:
+            # in case of acceleration compensation the end of the last move can
+            # be before next_move_time + total_move_t.
+            toolhead.update_move_time(total_move_t, extruder_commit_t)
         # Remove processed moves from the queue
         del queue[:move_count]
 
@@ -252,9 +251,12 @@ class ToolHead:
         self.printer.try_load_module(config, "manual_probe")
         self.printer.try_load_module(config, "tuning_tower")
     # Print time tracking
-    def update_move_time(self, movetime):
+    def update_move_time(self, movetime, max_commit_time=None):
         self.print_time += movetime
-        flush_to_time = self.print_time - self.move_flush_time
+        flush_to_time = self.print_time
+        if max_commit_time:
+            flush_to_time = min(flush_to_time, max_commit_time)
+        flush_to_time -= self.move_flush_time
         for m in self.all_mcus:
             m.flush_moves(flush_to_time)
     def _calc_print_time(self):

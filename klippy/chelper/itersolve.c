@@ -148,26 +148,46 @@ itersolve_generate_steps(struct stepper_kinematics *sk, double flush_time)
         return 0;
     trapq_check_sentinels(sk->tq);
     struct move *m = list_first_entry(&sk->tq->moves, struct move, node);
+    while (last_flush_time >= m->print_time + m->move_t)
+        m = list_next_entry(m, node);
+    double force_steps_time = sk->last_move_time + sk->scan_past;
     for (;;) {
-        double start = m->print_time, end = start + m->move_t;
-        if (last_flush_time >= end) {
-            m = list_next_entry(m, node);
-            continue;
-        }
+        if (last_flush_time >= flush_time)
+            return 0;
+        double start = m->print_time, end = m->print_time + m->move_t;
         if (start < last_flush_time)
             start = last_flush_time;
-        if (start >= flush_time)
-            break;
         if (end > flush_time)
             end = flush_time;
         if (check_active(sk, m)) {
+            if (sk->scan_future && start > last_flush_time) {
+                // Must generate steps leading up to stepper activity
+                force_steps_time = start;
+                if (last_flush_time < start - sk->scan_future)
+                    last_flush_time = start - sk->scan_future;
+                while (m->print_time > last_flush_time)
+                    m = list_prev_entry(m, node);
+                continue;
+            }
+            // Generate steps for this move
             int32_t ret = itersolve_gen_steps_range(sk, m, start, end);
             if (ret)
                 return ret;
+            sk->last_move_time = last_flush_time = end;
+            force_steps_time = end + sk->scan_past;
+        } else if (start < force_steps_time) {
+            // Must generates steps just past stepper activity
+            if (end > force_steps_time)
+                end = force_steps_time;
+            int32_t ret = itersolve_gen_steps_range(sk, m, start, end);
+            if (ret)
+                return ret;
+            last_flush_time = end;
         }
-        last_flush_time = end;
+        if (flush_time + sk->scan_future <= m->print_time + m->move_t)
+            return 0;
+        m = list_next_entry(m, node);
     }
-    return 0;
 }
 
 // Check if the given stepper is likely to be active in the given time range

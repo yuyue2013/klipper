@@ -137,8 +137,6 @@ class PrinterExtruder:
         if diff_r:
             return (self.instant_corner_v / abs(diff_r))**2
         return move.max_cruise_v2
-    def lookahead(self, moves, flush_count, lazy):
-        return flush_count
     def move(self, print_time, move):
         axis_d = move.axes_d[3]
         axis_r = move.axes_r[3]
@@ -188,8 +186,6 @@ class DummyExtruder:
             move.end_pos, "Extrude when no extruder present")
     def calc_junction(self, prev_move, move):
         return move.max_cruise_v2
-    def lookahead(self, moves, flush_count, lazy):
-        return flush_count
 
 def add_printer_objects(config):
     printer = config.get_printer()

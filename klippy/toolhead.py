@@ -105,18 +105,13 @@ LOOKAHEAD_FLUSH_TIME = 0.250
 class MoveQueue:
     def __init__(self, toolhead):
         self.toolhead = toolhead
-        self.extruder_lookahead = None
         self.queue = []
-        self.leftover = 0
         self.junction_flush = LOOKAHEAD_FLUSH_TIME
     def reset(self):
         del self.queue[:]
-        self.leftover = 0
         self.junction_flush = LOOKAHEAD_FLUSH_TIME
     def set_flush_time(self, flush_time):
         self.junction_flush = flush_time
-    def set_extruder(self, extruder):
-        self.extruder_lookahead = extruder.lookahead
     def flush(self, lazy=False):
         self.junction_flush = LOOKAHEAD_FLUSH_TIME
         update_flush_count = lazy
@@ -127,7 +122,7 @@ class MoveQueue:
         # after the last move.
         delayed = []
         next_end_v2 = next_smoothed_v2 = peak_cruise_v2 = 0.
-        for i in range(flush_count-1, self.leftover-1, -1):
+        for i in range(flush_count-1, -1, -1):
             move = queue[i]
             reachable_start_v2 = next_end_v2 + move.delta_v2
             start_v2 = min(move.max_start_v2, reachable_start_v2)
@@ -165,13 +160,10 @@ class MoveQueue:
             next_smoothed_v2 = smoothed_v2
         if update_flush_count:
             return
-        # Allow extruder to do its lookahead
-        move_count = self.extruder_lookahead(queue, flush_count, lazy)
         # Generate step times for all moves ready to be flushed
-        self.toolhead._process_moves(queue[:move_count])
+        self.toolhead._process_moves(queue[:flush_count])
         # Remove processed moves from the queue
-        self.leftover = flush_count - move_count
-        del queue[:move_count]
+        del queue[:flush_count]
     def add_move(self, move):
         self.queue.append(move)
         if len(self.queue) == 1:
@@ -247,7 +239,6 @@ class ToolHead:
         self.move_handlers = []
         # Create kinematics class
         self.extruder = kinematics.extruder.DummyExtruder()
-        self.move_queue.set_extruder(self.extruder)
         kin_name = config.get('kinematics')
         try:
             mod = importlib.import_module('kinematics.' + kin_name)
@@ -436,7 +427,6 @@ class ToolHead:
         self.extruder.set_active(last_move_time, False)
         extrude_pos = extruder.set_active(last_move_time, True)
         self.extruder = extruder
-        self.move_queue.set_extruder(extruder)
         self.commanded_pos[3] = extrude_pos
     def get_extruder(self):
         return self.extruder

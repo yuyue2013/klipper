@@ -6,6 +6,9 @@ All dates in this document are approximate.
 
 # Changes
 
+201910??: The pressure_advance_lookahead_time parameter has been
+removed. See example.cfg for alternate configuration settings.
+
 20191003: The move_to_previous option in [safe_z_homing] now defaults
 to False.  (It was effectively False prior to 20190918.)
 

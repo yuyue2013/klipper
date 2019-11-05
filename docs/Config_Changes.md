@@ -6,6 +6,9 @@ All dates in this document are approximate.
 
 # Changes
 
+201911??: The pressure_advance_lookahead_time parameter has been
+removed.  See example.cfg for alternate configuration settings.
+
 20191112: The tmc stepper driver virtual enable capability is now
 automatically enabled if the stepper does not have a dedicated stepper
 enable pin.  Remove references to tmcXXXX:virtual_enable from the

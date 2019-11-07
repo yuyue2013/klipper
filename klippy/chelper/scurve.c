@@ -82,6 +82,26 @@ double scurve_get_time(struct scurve *s, double max_scurve_t, double distance)
     return (high + low) * .5;
 }
 
+static inline double
+scurve_antiderivative(struct scurve *s, double time)
+{
+    time += s->offset_t;
+    double v = (1./7.) * s->c6;
+    v = (1./6.) * s->c5 + v * time;
+    v = (1./5.) * s->c4 + v * time;
+    v = (1./4.) * s->c3 + v * time;
+    v = (1./3.) * s->c2 + v * time;
+    v = (1./2.) * s->c1 + v * time;
+    v = s->c0 + v * time;
+    return v * time;
+}
+
+double
+scurve_integrate(struct scurve *s, double start, double end)
+{
+    return scurve_antiderivative(s, end) - scurve_antiderivative(s, start);
+}
+
 void
 scurve_fill(struct scurve *s, int accel_order
             , double accel_t, double accel_offset_t, double total_accel_t

@@ -5,7 +5,12 @@
 #include "scurve.h"  // scurve
 
 struct coord {
-    double x, y, z;
+    union {
+        struct {
+            double x, y, z;
+        };
+        double axis[3];
+    };
 };
 
 struct move {
@@ -40,8 +45,11 @@ void trapq_append(struct trapq *tq, double print_time
                   , const struct trap_accel_decel *accel_decel);
 double move_get_distance(struct move *m, double move_time);
 struct coord move_get_coord(struct move *m, double move_time);
+double trapq_integrate(struct move *m, int axis, double start, double end);
+struct move *trapq_find_move(struct move *m, double *ptime);
 struct trapq *trapq_alloc(void);
 void trapq_free(struct trapq *tq);
+void trapq_check_sentinels(struct trapq *tq);
 void trapq_add_move(struct trapq *tq, struct move *m);
 void trapq_free_moves(struct trapq *tq, double print_time);
 

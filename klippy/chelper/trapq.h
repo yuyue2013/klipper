@@ -39,6 +39,11 @@ struct trapq {
 
 struct move *move_alloc(void);
 struct trap_accel_decel *accel_decel_alloc(void);
+void accel_decel_fill(struct trap_accel_decel *accel_decel
+                      , double accel_t, double cruise_t, double decel_t
+                      , double start_v, double cruise_v
+                      , double accel, int accel_order);
+
 void trapq_append(struct trapq *tq, double print_time
                   , double start_pos_x, double start_pos_y, double start_pos_z
                   , double axes_r_x, double axes_r_y, double axes_r_z

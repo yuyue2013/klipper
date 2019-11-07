@@ -31,6 +31,9 @@ class ForceMove:
         self.steppers = {}
         # Setup iterative solver
         ffi_main, ffi_lib = chelper.get_ffi()
+        self.ctrap_accel_decel = ffi_main.gc(
+                ffi_lib.accel_decel_alloc(), ffi_lib.free)
+        self.accel_decel_fill = ffi_lib.accel_decel_fill
         self.trapq = ffi_main.gc(ffi_lib.trapq_alloc(), ffi_lib.trapq_free)
         self.trapq_append = ffi_lib.trapq_append
         self.trapq_free_moves = ffi_lib.trapq_free_moves
@@ -71,8 +74,11 @@ class ForceMove:
         prev_sk = stepper.set_stepper_kinematics(self.stepper_kinematics)
         stepper.set_position((0., 0., 0.))
         axis_r, accel_t, cruise_t, cruise_v = calc_move_time(dist, speed, accel)
-        self.trapq_append(self.trapq, print_time, accel_t, cruise_t, accel_t,
-                          0., 0., 0., axis_r, 0., 0., 0., cruise_v, accel)
+        self.accel_decel_fill(self.ctrap_accel_decel,
+                              accel_t, cruise_t, accel_t, 0., cruise_v,
+                              accel, toolhead.accel_order)
+        self.trapq_append(self.trapq, print_time,
+                          0., 0., 0., axis_r, 0., 0., self.ctrap_accel_decel)
         print_time += accel_t + cruise_t + accel_t
         stepper.generate_steps(print_time)
         self.trapq_free_moves(self.trapq, print_time)

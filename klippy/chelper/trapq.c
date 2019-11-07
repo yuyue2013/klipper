@@ -24,9 +24,28 @@ move_alloc(void)
 struct trap_accel_decel * __visible
 accel_decel_alloc(void)
 {
-    struct trap_accel_decel *tad = malloc(sizeof(*tad));
-    memset(tad, 0, sizeof(*tad));
-    return tad;
+    struct trap_accel_decel *accel_decel = malloc(sizeof(*accel_decel));
+    memset(accel_decel, 0, sizeof(*accel_decel));
+    return accel_decel;
+}
+
+// Fill trap_accel_decel with a simple (non-combined) velocity trapezoid
+void __visible
+accel_decel_fill(struct trap_accel_decel *accel_decel
+                 , double accel_t, double cruise_t, double decel_t
+                 , double start_v, double cruise_v
+                 , double accel, int accel_order)
+{
+    memset(accel_decel, 0, sizeof(*accel_decel));
+    accel_decel->accel_order = accel_order;
+    accel_decel->accel_t = accel_decel->uncomp_accel_t = accel_t;
+    accel_decel->total_accel_t = accel_t;
+    accel_decel->cruise_t = cruise_t;
+    accel_decel->decel_t = accel_decel->uncomp_decel_t = decel_t;
+    accel_decel->total_decel_t = decel_t;
+    accel_decel->start_accel_v = start_v;
+    accel_decel->cruise_v = cruise_v;
+    accel_decel->effective_accel = accel_decel->effective_decel = accel;
 }
 
 // Fill and add a move to the trapezoid velocity queue

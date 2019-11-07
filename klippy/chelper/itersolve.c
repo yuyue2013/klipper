@@ -1,206 +1,17 @@
 // Iterative solver for kinematic moves
 //
-// Copyright (C) 2018  Kevin O'Connor <kevin@koconnor.net>
+// Copyright (C) 2018-2019  Kevin O'Connor <kevin@koconnor.net>
 //
 // This file may be distributed under the terms of the GNU GPLv3 license.
 
-#include <math.h> // sqrt
-#include <stdlib.h> // malloc
+#include <math.h> // fabs
+#include <stddef.h> // offsetof
 #include <string.h> // memset
 #include "compiler.h" // __visible
-#include "itersolve.h" // struct coord
+#include "itersolve.h" // itersolve_generate_steps
 #include "pyhelper.h" // errorf
 #include "stepcompress.h" // queue_append_start
-
-
-/****************************************************************
- * Kinematic moves
- ****************************************************************/
-
-struct move * __visible
-move_alloc(void)
-{
-    struct move *m = malloc(sizeof(*m));
-    memset(m, 0, sizeof(*m));
-    m->accel_order = 2;
-    return m;
-}
-
-static inline double
-max_accel_comp(double accel_comp, double accel_t)
-{
-    // Limit compensation to maintain velocity > 0 (no movement backwards).
-    // 0.159 is a magic number - a solution of optimization problem for AO=6:
-    // maximum compensation value such that velocity >= 0 for any accel_t. It is
-    // slightly smaller than 1/6 - a solution of the same problem for AO=4.
-    return fmin(accel_comp, accel_t * accel_t * 0.159);
-}
-
-static void
-move_fill_bezier2(struct move_accel *ma, double start_accel_v
-                  , double effective_accel, double accel_offset_t)
-{
-    ma->offset_t = accel_offset_t;
-    ma->c2 = .5 * effective_accel;
-    ma->c1 = start_accel_v;
-    ma->c0 = (-ma->c2 * ma->offset_t - ma->c1) * ma->offset_t;
-}
-
-// Determine the coefficients for a 4th order bezier position function
-static void
-move_fill_bezier4(struct move_accel *ma, double start_accel_v
-        , double effective_accel, double total_accel_t, double accel_offset_t
-        , double accel_comp)
-{
-    ma->offset_t = accel_offset_t;
-    if (!total_accel_t)
-        return;
-    double inv_accel_t = 1. / total_accel_t;
-    double accel_div_accel_t = effective_accel * inv_accel_t;
-    double accel_div_accel_t2 = accel_div_accel_t * inv_accel_t;
-    ma->c4 = -.5 * accel_div_accel_t2;
-    ma->c3 = accel_div_accel_t;
-    ma->c2 = -6. * accel_div_accel_t2 * accel_comp;
-    ma->c1 = start_accel_v + 6. * accel_div_accel_t * accel_comp;
-    ma->c0 = 0;
-    ma->c0 = -move_eval_accel(ma, 0);
-}
-
-// Determine the coefficients for a 6th order bezier position function
-static void
-move_fill_bezier6(struct move_accel *ma, double start_accel_v
-        , double effective_accel, double total_accel_t, double accel_offset_t
-        , double accel_comp)
-{
-    ma->offset_t = accel_offset_t;
-    if (!total_accel_t)
-        return;
-    double inv_accel_t = 1. / total_accel_t;
-    double accel_div_accel_t2 = effective_accel * inv_accel_t * inv_accel_t;
-    double accel_div_accel_t3 = accel_div_accel_t2 * inv_accel_t;
-    double accel_div_accel_t4 = accel_div_accel_t3 * inv_accel_t;
-    ma->c6 = accel_div_accel_t4;
-    ma->c5 = -3. * accel_div_accel_t3;
-    ma->c4 = 2.5 * accel_div_accel_t2 + 30. * accel_div_accel_t4 * accel_comp;
-    ma->c3 = -60. * accel_div_accel_t3 * accel_comp;
-    ma->c2 = 30. * accel_div_accel_t2 * accel_comp;
-    ma->c1 = start_accel_v;
-    ma->c0 = 0;
-    ma->c0 = -move_eval_accel(ma, 0);
-}
-
-void __visible
-move_fill_pos(struct move *m
-              , double start_pos_x, double start_pos_y, double start_pos_z
-              , double axes_d_x, double axes_d_y, double axes_d_z
-              , double start_pos_e, double axes_d_e)
-{
-    m->start_pos.x = start_pos_x;
-    m->start_pos.y = start_pos_y;
-    m->start_pos.z = start_pos_z;
-    m->extrude_pos = start_pos_e;
-    if (m->is_kinematic_move) {
-        double inv_kin_move_d = 1. / sqrt(axes_d_x*axes_d_x + axes_d_y*axes_d_y
-                + axes_d_z*axes_d_z);
-        m->axes_r.x = axes_d_x * inv_kin_move_d;
-        m->axes_r.y = axes_d_y * inv_kin_move_d;
-        m->axes_r.z = axes_d_z * inv_kin_move_d;
-    }
-    m->extrude_d = axes_d_e;
-}
-
-// Populate a 'struct move' with a velocity trapezoid
-void __visible
-move_fill_trap(struct move *m, double print_time
-               , double accel_t, double accel_offset_t, double total_accel_t
-               , double cruise_t
-               , double decel_t, double decel_offset_t, double total_decel_t
-               , double start_accel_v, double cruise_v
-               , double effective_accel, double effective_decel
-               , double accel_comp)
-{
-    // Setup velocity trapezoid
-    m->print_time = print_time;
-    m->move_t = accel_t + cruise_t + decel_t;
-    m->accel_t = accel_t;
-    m->cruise_t = cruise_t;
-
-    // Setup for accel/cruise/decel phases
-    m->cruise_v = cruise_v;
-    memset(&m->accel, 0, sizeof(m->accel));
-    memset(&m->decel, 0, sizeof(m->decel));
-    if (m->accel_order == 4) {
-        move_fill_bezier4(&m->accel, start_accel_v, effective_accel
-                , total_accel_t, accel_offset_t
-                , max_accel_comp(accel_comp, total_accel_t));
-        move_fill_bezier4(&m->decel, cruise_v, -effective_decel
-                , total_decel_t, decel_offset_t
-                , max_accel_comp(accel_comp, total_decel_t));
-    } else if (m->accel_order == 6) {
-        move_fill_bezier6(&m->accel, start_accel_v, effective_accel
-                , total_accel_t, accel_offset_t
-                , max_accel_comp(accel_comp, total_accel_t));
-        move_fill_bezier6(&m->decel, cruise_v, -effective_decel
-                , total_decel_t, decel_offset_t
-                , max_accel_comp(accel_comp, total_decel_t));
-    } else {
-        move_fill_bezier2(&m->accel, start_accel_v, effective_accel
-                , accel_offset_t);
-        move_fill_bezier2(&m->decel, cruise_v, -effective_decel
-                , decel_offset_t);
-    }
-    m->cruise_start_d = move_eval_accel(&m->accel, accel_t);
-    m->decel_start_d = m->cruise_start_d + cruise_t * cruise_v;
-}
-
-// Return the distance moved given a time in a move
-inline double
-move_get_distance(struct move *m, double move_time)
-{
-    if (unlikely(move_time < m->accel_t))
-        // Acceleration phase of move
-        return move_eval_accel(&m->accel, move_time);
-    move_time -= m->accel_t;
-    if (likely(move_time <= m->cruise_t))
-        // Cruising phase
-        return m->cruise_start_d + m->cruise_v * move_time;
-    // Deceleration phase
-    move_time -= m->cruise_t;
-    return m->decel_start_d + move_eval_accel(&m->decel, move_time);
-}
-
-// Return the XYZ coordinates given a time in a move
-inline struct coord
-move_get_coord(struct move *m, double move_time)
-{
-    double move_dist = move_get_distance(m, move_time);
-    return (struct coord) {
-        .x = m->start_pos.x + m->axes_r.x * move_dist,
-        .y = m->start_pos.y + m->axes_r.y * move_dist,
-        .z = m->start_pos.z + m->axes_r.z * move_dist };
-}
-
-
-/****************************************************************
- * Iterative solver
- ****************************************************************/
-
-double move_get_time(struct move *m, double move_distance)
-{
-    double low = 0;
-    double high = m->move_t;
-    if (move_get_distance(m, high) <= move_distance) return high;
-    if (move_get_distance(m, low) > move_distance) return low;
-    while (high - low > .000000001) {
-        double guess_time = (high + low) * .5;
-        if (move_get_distance(m, guess_time) > move_distance) {
-            high = guess_time;
-        } else {
-            low = guess_time;
-        }
-    }
-    return (high + low) * .5;
-}
+#include "trapq.h" // struct move
 
 struct timepos {
     double time, position;
@@ -212,7 +23,7 @@ itersolve_find_step(struct stepper_kinematics *sk, struct move *m
                     , struct timepos low, struct timepos high
                     , double target)
 {
-    sk_callback calc_position = sk->calc_position;
+    sk_calc_callback calc_position_cb = sk->calc_position_cb;
     struct timepos best_guess = high;
     low.position -= target;
     high.position -= target;
@@ -229,7 +40,7 @@ itersolve_find_step(struct stepper_kinematics *sk, struct move *m
         if (fabs(guess_time - best_guess.time) <= .000000001)
             break;
         best_guess.time = guess_time;
-        best_guess.position = calc_position(sk, m, guess_time);
+        best_guess.position = calc_position_cb(sk, m, guess_time);
         double guess_position = best_guess.position - target;
         int guess_sign = signbit(guess_position);
         if (guess_sign == high_sign) {
@@ -243,15 +54,17 @@ itersolve_find_step(struct stepper_kinematics *sk, struct move *m
     return best_guess;
 }
 
-// Generate step times for a stepper during a move
-int32_t __visible
-itersolve_gen_steps(struct stepper_kinematics *sk, struct move *m)
+// Generate step times for a portion of a move
+static int32_t
+itersolve_gen_steps_range(struct stepper_kinematics *sk, struct move *m
+                          , double move_start, double move_end)
 {
     struct stepcompress *sc = sk->sc;
-    sk_callback calc_position = sk->calc_position;
+    sk_calc_callback calc_position_cb = sk->calc_position_cb;
     double half_step = .5 * sk->step_dist;
     double mcu_freq = stepcompress_get_mcu_freq(sc);
-    struct timepos last = { 0., sk->commanded_pos }, low = last, high = last;
+    double start = move_start - m->print_time, end = move_end - m->print_time;
+    struct timepos last = { start, sk->commanded_pos }, low = last, high = last;
     double seek_time_delta = 0.000100;
     int sdir = stepcompress_get_step_dir(sc);
     struct queue_append qa = queue_append_start(sc, m->print_time, .5);
@@ -260,16 +73,16 @@ itersolve_gen_steps(struct stepper_kinematics *sk, struct move *m)
         double dist = high.position - last.position;
         if (fabs(dist) < half_step) {
         seek_new_high_range:
-            if (high.time >= m->move_t)
+            if (high.time >= end)
                 // At end of move
                 break;
             // Need to increase next step search range
             low = high;
             high.time = last.time + seek_time_delta;
             seek_time_delta += seek_time_delta;
-            if (high.time > m->move_t)
-                high.time = m->move_t;
-            high.position = calc_position(sk, m, high.time);
+            if (high.time > end)
+                high.time = end;
+            high.position = calc_position_cb(sk, m, high.time);
             continue;
         }
         int next_sdir = dist > 0.;
@@ -278,10 +91,12 @@ itersolve_gen_steps(struct stepper_kinematics *sk, struct move *m)
             if (fabs(dist) < half_step + .000000001)
                 // Only change direction if going past midway point
                 goto seek_new_high_range;
-            if (last.time >= low.time && high.time > last.time) {
+            if (last.time >= low.time) {
                 // Must seek new low range to avoid re-finding previous time
+                if (high.time < last.time + .000000001)
+                    goto seek_new_high_range;
                 high.time = (last.time + high.time) * .5;
-                high.position = calc_position(sk, m, high.time);
+                high.position = calc_position_cb(sk, m, high.time);
                 continue;
             }
             int ret = queue_append_set_next_step_dir(&qa, next_sdir);
@@ -308,7 +123,82 @@ itersolve_gen_steps(struct stepper_kinematics *sk, struct move *m)
     }
     queue_append_finish(qa);
     sk->commanded_pos = last.position;
+    if (sk->post_cb)
+        sk->post_cb(sk);
     return 0;
+}
+
+// Check if a move is likely to cause movement on a stepper
+static inline int
+check_active(struct stepper_kinematics *sk, struct move *m)
+{
+    int af = sk->active_flags;
+    return ((af & AF_X && m->axes_r.x != 0.)
+            || (af & AF_Y && m->axes_r.y != 0.)
+            || (af & AF_Z && m->axes_r.z != 0.));
+}
+
+// Generate step times for a range of moves on the trapq
+int32_t __visible
+itersolve_generate_steps(struct stepper_kinematics *sk, double flush_time)
+{
+    double last_flush_time = sk->last_flush_time;
+    sk->last_flush_time = flush_time;
+    if (!sk->tq || list_empty(&sk->tq->moves))
+        return 0;
+    struct move *m = list_first_entry(&sk->tq->moves, struct move, node);
+    for (;;) {
+        double move_print_time = m->print_time;
+        double move_end_time = move_print_time + m->move_t;
+        if (last_flush_time >= move_end_time) {
+            if (list_is_last(&m->node, &sk->tq->moves))
+                break;
+            m = list_next_entry(m, node);
+            continue;
+        }
+        double start = move_print_time, end = move_end_time;
+        if (start < last_flush_time)
+            start = last_flush_time;
+        if (start >= flush_time)
+            break;
+        if (end > flush_time)
+            end = flush_time;
+        if (check_active(sk, m)) {
+            int32_t ret = itersolve_gen_steps_range(sk, m, start, end);
+            if (ret)
+                return ret;
+        }
+        last_flush_time = end;
+    }
+    return 0;
+}
+
+// Check if the given stepper is likely to be active in the given time range
+double __visible
+itersolve_check_active(struct stepper_kinematics *sk, double flush_time)
+{
+    if (!sk->tq || list_empty(&sk->tq->moves))
+        return 0.;
+    struct move *m = list_first_entry(&sk->tq->moves, struct move, node);
+    while (sk->last_flush_time >= m->print_time + m->move_t) {
+        if (list_is_last(&m->node, &sk->tq->moves))
+            return 0.;
+        m = list_next_entry(m, node);
+    }
+    while (m->print_time < flush_time) {
+        if (check_active(sk, m))
+            return m->print_time;
+        if (list_is_last(&m->node, &sk->tq->moves))
+            return 0.;
+        m = list_next_entry(m, node);
+    }
+    return 0.;
+}
+
+void __visible
+itersolve_set_trapq(struct stepper_kinematics *sk, struct trapq *tq)
+{
+    sk->tq = tq;
 }
 
 void __visible
@@ -328,10 +218,7 @@ itersolve_calc_position_from_coord(struct stepper_kinematics *sk
     m.start_pos.x = x;
     m.start_pos.y = y;
     m.start_pos.z = z;
-    m.axes_r.y = 1.;
-    m.cruise_t = 1.;
-    m.cruise_v = 1.;
-    return sk->calc_position(sk, &m, 0.);
+    return sk->calc_position_cb(sk, &m, 0.);
 }
 
 void __visible

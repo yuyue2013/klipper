@@ -21,12 +21,15 @@ class MCU_stepper:
         self._step_dist = 0.
         self._min_stop_interval = 0.
         self._reset_cmd_id = self._get_position_cmd = None
+        self._active_callbacks = []
         ffi_main, self._ffi_lib = chelper.get_ffi()
         self._stepqueue = ffi_main.gc(self._ffi_lib.stepcompress_alloc(oid),
                                       self._ffi_lib.stepcompress_free)
         self._mcu.register_stepqueue(self._stepqueue)
-        self._stepper_kinematics = self._itersolve_gen_steps = None
-        self.set_ignore_move(False)
+        self._stepper_kinematics = None
+        self._itersolve_generate_steps = self._ffi_lib.itersolve_generate_steps
+        self._itersolve_check_active = self._ffi_lib.itersolve_check_active
+        self._trapq = ffi_main.NULL
     def get_mcu(self):
         return self._mcu
     def setup_dir_pin(self, pin_params):
@@ -94,14 +97,6 @@ class MCU_stepper:
             self._ffi_lib.itersolve_set_stepcompress(
                 sk, self._stepqueue, self._step_dist)
         return old_sk
-    def set_ignore_move(self, ignore_move):
-        was_ignore = (self._itersolve_gen_steps
-                      is not self._ffi_lib.itersolve_gen_steps)
-        if ignore_move:
-            self._itersolve_gen_steps = (lambda *args: 0)
-        else:
-            self._itersolve_gen_steps = self._ffi_lib.itersolve_gen_steps
-        return was_ignore
     def note_homing_end(self, did_trigger=False):
         ret = self._ffi_lib.stepcompress_reset(self._stepqueue, 0)
         if ret:
@@ -120,8 +115,29 @@ class MCU_stepper:
             mcu_pos_dist = -mcu_pos_dist
         self._ffi_lib.itersolve_set_commanded_pos(
             self._stepper_kinematics, mcu_pos_dist - self._mcu_position_offset)
-    def step_itersolve(self, cmove):
-        ret = self._itersolve_gen_steps(self._stepper_kinematics, cmove)
+    def set_trapq(self, tq):
+        if tq is None:
+            ffi_main, self._ffi_lib = chelper.get_ffi()
+            tq = ffi_main.NULL
+        self._ffi_lib.itersolve_set_trapq(self._stepper_kinematics, tq)
+        old_tq = self._trapq
+        self._trapq = tq
+        return old_tq
+    def add_active_callback(self, cb):
+        self._active_callbacks.append(cb)
+    def generate_steps(self, flush_time):
+        # Check for activity if necessary
+        if self._active_callbacks:
+            ret = self._itersolve_check_active(self._stepper_kinematics,
+                                               flush_time)
+            if ret:
+                cbs = self._active_callbacks
+                self._active_callbacks = []
+                for cb in cbs:
+                    cb(ret)
+        # Generate steps
+        ret = self._itersolve_generate_steps(self._stepper_kinematics,
+                                             flush_time)
         if ret:
             raise error("Internal error in stepcompress")
 

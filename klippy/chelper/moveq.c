@@ -7,11 +7,60 @@
 #include "itersolve.h"
 #include "moveq.h"
 #include "pyhelper.h" // get_monotonic
+#include "scurve.h" // scurve
+#include "trapq.h" // trap_accel_decel
 
 static const double EPSILON = 0.000000001;
 
 #define MIN(a, b) ((a) < (b) ? (a) : (b))
 #define MAX(a, b) ((a) > (b) ? (a) : (b))
+
+struct accel_group {
+    double max_accel, min_accel;
+    double max_jerk;
+    double min_jerk_limit_time;
+    double combined_d, accel_d;
+    double accel_t, accel_offset_t, total_accel_t;
+    double uncomp_accel_t, uncomp_accel_offset_t;
+    double start_accel_v;
+    double effective_accel;
+    struct accel_group *start_accel, *next_accel;
+    struct qmove *move;
+    double max_start_v, max_start_v2, max_end_v2;
+};
+
+struct junction_point {
+    struct list_node node;
+    struct accel_group accel;
+    struct accel_group *ma;
+    double min_start_time, min_end_time;
+};
+
+struct qmove {
+    struct list_node node;
+
+    double cruise_v;
+    double move_d;
+    int accel_order;
+    double accel_comp;
+
+    struct accel_group accel_group, decel_group, default_accel;
+    struct accel_group safe_decel;
+    double smooth_delta_v2, max_smoothed_v2;
+    double max_cruise_v2, junction_max_v2;
+
+    // Only used to track smootheness, can be deleted
+    double start_v, end_v;
+};
+
+struct qmove * __visible
+qmove_alloc(void)
+{
+    struct qmove *m = malloc(sizeof(*m));
+    memset(m, 0, sizeof(*m));
+    m->accel_order = 2;
+    return m;
+}
 
 static void
 reset_junctions(struct moveq *mq, double start_v2)
@@ -46,7 +95,7 @@ moveq_alloc(void)
 void __visible
 moveq_reset(struct moveq *mq)
 {
-    struct move *m = NULL, *nm = NULL;
+    struct qmove *m = NULL, *nm = NULL;
     list_for_each_entry_safe(m, nm, &mq->moves, node) {
         list_del(&m->node);
         free(m);
@@ -62,7 +111,7 @@ moveq_reset(struct moveq *mq)
 }
 
 static void
-fill_accel_group(struct accel_group *ag, struct move *m, double accel
+fill_accel_group(struct accel_group *ag, struct qmove *m, double accel
                  , double jerk, double min_jerk_limit_time)
 {
     ag->max_accel = accel;
@@ -295,21 +344,18 @@ set_accel(struct accel_group* combined, double cruise_v2
     }
     double effective_accel = calc_effective_accel(combined, cruise_v);
     double accel_comp = combined->move->accel_comp;
-    struct move m, m_uncomp;
-    memset(&m, 0, sizeof(m));
-    m.accel_order = combined->move->accel_order;
-    move_fill_trap(&m, 0.,
+    struct scurve s, s_uncomp;
+    memset(&s, 0, sizeof(s));
+    int accel_order = combined->move->accel_order;
+    scurve_fill(&s, accel_order,
             combined_accel_t, 0., combined_accel_t,
-            0., 0., 0., 0.,
-            start_accel_v, cruise_v, effective_accel, 0., accel_comp);
+            start_accel_v, effective_accel, accel_comp);
     if (accel_comp) {
-        // Also computed uncompensated acceleration timings.
-        memset(&m_uncomp, 0, sizeof(m_uncomp));
-        m_uncomp.accel_order = combined->move->accel_order;
-        move_fill_trap(&m_uncomp, 0.,
+        // Also compute uncompensated acceleration timings.
+        memset(&s_uncomp, 0, sizeof(s_uncomp));
+        scurve_fill(&s_uncomp, accel_order,
                 combined_accel_t, 0., combined_accel_t,
-                0., 0., 0., 0.,
-                start_accel_v, cruise_v, effective_accel, 0., 0.);
+                start_accel_v, effective_accel, 0.);
     }
     double remaining_accel_t = combined_accel_t;
     double remaining_uncomp_accel_t = combined_accel_t;
@@ -327,20 +373,23 @@ set_accel(struct accel_group* combined, double cruise_v2
                 a->accel_offset_t = combined_accel_t - remaining_accel_t;
                 a->uncomp_accel_offset_t = combined_accel_t
                     - remaining_uncomp_accel_t;
-                a->accel_t = move_get_time(&m, next_pos) - a->accel_offset_t;
+                a->accel_t = scurve_get_time(&s, combined_accel_t, next_pos)
+                    - a->accel_offset_t;
                 if (accel_comp) {
-                    a->uncomp_accel_t = move_get_time(&m_uncomp, next_pos)
+                    a->uncomp_accel_t = scurve_get_time(&s_uncomp
+                            , combined_accel_t, next_pos)
                         - a->uncomp_accel_offset_t;
                 } else {
                     a->uncomp_accel_t = a->accel_t;
                 }
             } else {
-                a->accel_offset_t =
-                    combined_accel_t - move_get_time(&m, next_pos);
+                a->accel_offset_t = combined_accel_t
+                    - scurve_get_time(&s, combined_accel_t, next_pos);
                 a->accel_t = remaining_accel_t - a->accel_offset_t;
                 if (accel_comp) {
                     a->uncomp_accel_offset_t =
-                        combined_accel_t - move_get_time(&m_uncomp, next_pos);
+                        combined_accel_t - scurve_get_time(&s_uncomp
+                                , combined_accel_t, next_pos);
                 } else {
                     a->uncomp_accel_offset_t = a->accel_offset_t;
                 }
@@ -358,7 +407,7 @@ set_accel(struct accel_group* combined, double cruise_v2
 }
 
 static double
-calc_move_peak_v2(struct move *m)
+calc_move_peak_v2(struct qmove *m)
 {
     struct accel_group *accel = &m->accel_group;
     struct accel_group *decel = &m->decel_group;
@@ -384,7 +433,7 @@ calc_move_peak_v2(struct move *m)
     return low_v * low_v;
 }
 
-static struct move *
+static struct qmove *
 backward_pass(struct moveq *mq, int lazy, int *ret)
 {
     *ret = 0;
@@ -396,7 +445,7 @@ backward_pass(struct moveq *mq, int lazy, int *ret)
     list_init(&delayed);
     double next_smoothed_v2 = 0., peak_cruise_v2 = 0., junction_max_v2 = 0.;
     reset_junctions(mq, 0.);
-    struct move *move = NULL, *pm = NULL, *flush_limit = NULL;
+    struct qmove *move = NULL, *pm = NULL, *flush_limit = NULL;
     list_for_each_entry_reversed_safe(move, pm, &mq->moves, node) {
         // Determine peak cruise velocity
         double reachable_smoothed_v2 = next_smoothed_v2 + move->smooth_delta_v2;
@@ -414,7 +463,7 @@ backward_pass(struct moveq *mq, int lazy, int *ret)
                 peak_cruise_v2 = (smoothed_v2 + reachable_smoothed_v2) * .5;
                 peak_cruise_v2 = MIN(move->max_cruise_v2, peak_cruise_v2);
             }
-            struct move *m = NULL;
+            struct qmove *m = NULL;
             if (!update_flush_limit && move != flush_limit) {
                 move->max_cruise_v2 = MIN(move->max_cruise_v2
                         , peak_cruise_v2);
@@ -437,7 +486,7 @@ backward_pass(struct moveq *mq, int lazy, int *ret)
                             , peak_cruise_v2);
                 }
             }
-            struct move *nm = NULL, *qm = move;
+            struct qmove *nm = NULL, *qm = move;
             // Put delayed moves back to their places in mq->moves list.
             list_for_each_entry_safe(m, nm, &delayed, node) {
                 list_del(&m->node);
@@ -477,7 +526,7 @@ backward_pass(struct moveq *mq, int lazy, int *ret)
             move = list_prev_entry(move, node)) {
         struct accel_group safe_decel = move->decel_group;
         safe_decel.combined_d = 0.;
-        struct move *m, *nm = NULL;
+        struct qmove *m, *nm = NULL;
         for (m = move; !list_at_end(m, &mq->moves, node); m = nm) {
             safe_decel.combined_d += m->decel_group.combined_d;
             limit_accel(&safe_decel, m->decel_group.max_accel
@@ -508,7 +557,7 @@ backward_pass(struct moveq *mq, int lazy, int *ret)
 }
 
 static double
-calc_trap_peak_v2(struct move *accel_head, struct move *decel_head)
+calc_trap_peak_v2(struct qmove *accel_head, struct qmove *decel_head)
 {
     if (decel_head != accel_head) {
         double peak_v2 = MIN(decel_head->decel_group.max_end_v2
@@ -522,10 +571,10 @@ calc_trap_peak_v2(struct move *accel_head, struct move *decel_head)
 }
 
 static int
-set_trap_decel(struct move *decel_head, struct list_head *trapezoid
+set_trap_decel(struct qmove *decel_head, struct list_head *trapezoid
                , double cruise_v2)
 {
-    struct move *m = decel_head;
+    struct qmove *m = decel_head;
     while (!list_at_end(m, trapezoid, node)) {
         int ret = set_accel(&m->decel_group, cruise_v2
                 , /*time_offset_from_start=*/0);
@@ -538,10 +587,10 @@ set_trap_decel(struct move *decel_head, struct list_head *trapezoid
 }
 
 static int
-set_trap_accel(struct move *accel_head, struct list_head *trapezoid
+set_trap_accel(struct qmove *accel_head, struct list_head *trapezoid
                , double cruise_v2)
 {
-    struct move *m = accel_head;
+    struct qmove *m = accel_head;
     while (!list_at_end(m, trapezoid, node)) {
         int ret = set_accel(&m->accel_group, cruise_v2
                 , /*time_offset_from_start=*/1);
@@ -553,10 +602,10 @@ set_trap_accel(struct move *accel_head, struct list_head *trapezoid
     return 0;
 }
 
-static struct move *
+static struct qmove *
 trap_flush(struct list_node *next_pos
-           , struct list_head *trapezoid , struct move **accel_head
-           , struct move **decel_head, int *ret)
+           , struct list_head *trapezoid , struct qmove **accel_head
+           , struct qmove **decel_head, int *ret)
 {
     double peak_cruise_v2 = calc_trap_peak_v2(*accel_head, *decel_head);
     *ret = 0;
@@ -566,7 +615,7 @@ trap_flush(struct list_node *next_pos
     if (*accel_head)
         *ret = set_trap_accel(*accel_head, trapezoid, peak_cruise_v2);
     if (*ret) return NULL;
-    struct move *move = NULL, *next = NULL, *prev = NULL;
+    struct qmove *move = NULL, *next = NULL, *prev = NULL;
     list_for_each_entry_safe(move, next, trapezoid, node) {
         list_del(&move->node);
         list_add_before(&move->node, next_pos);
@@ -577,8 +626,8 @@ trap_flush(struct list_node *next_pos
 }
 
 static void
-add_as_accel(struct move *move, struct list_head *trapezoid
-             , struct move **accel_head, struct move **decel_head)
+add_as_accel(struct qmove *move, struct list_head *trapezoid
+             , struct qmove **accel_head, struct qmove **decel_head)
 {
     list_del(&move->node);
     list_add_tail(&move->node, trapezoid);
@@ -586,8 +635,8 @@ add_as_accel(struct move *move, struct list_head *trapezoid
 }
 
 static void
-add_as_decel(struct move *move, struct list_head *trapezoid
-             , struct move **accel_head, struct move **decel_head)
+add_as_decel(struct qmove *move, struct list_head *trapezoid
+             , struct qmove **accel_head, struct qmove **decel_head)
 {
     if (!*decel_head)
         *decel_head = move;
@@ -597,11 +646,11 @@ add_as_decel(struct move *move, struct list_head *trapezoid
     }
 }
 
-static struct move *
-forward_pass(struct moveq *mq, struct move *end, int lazy, int *ret)
+static struct qmove *
+forward_pass(struct moveq *mq, struct qmove *end, int lazy, int *ret)
 {
     *ret = 0;
-    struct move *move = list_first_entry(&mq->moves, struct move, node);
+    struct qmove *move = list_first_entry(&mq->moves, struct qmove, node);
     double start_v2 = mq->prev_end_v2;
     double max_end_v2 = move->decel_group.max_end_v2;
     if (max_end_v2 + EPSILON < start_v2) {
@@ -621,11 +670,11 @@ forward_pass(struct moveq *mq, struct move *end, int lazy, int *ret)
     }
     struct list_head trapezoid;
     list_init(&trapezoid);
-    struct move *accel_head = NULL, *decel_head = NULL;
+    struct qmove *accel_head = NULL, *decel_head = NULL;
 
     reset_junctions(mq, start_v2);
     double prev_cruise_v2 = start_v2;
-    struct move *last_flushed_move = NULL, *next_move = NULL;
+    struct qmove *last_flushed_move = NULL, *next_move = NULL;
     for (; !list_at_end(move, &mq->moves, node) && move != end;
             move = next_move) {
         // Track next_move early because move will be moved to trapezoid list
@@ -667,7 +716,7 @@ forward_pass(struct moveq *mq, struct move *end, int lazy, int *ret)
     } else {
         assert(end != NULL);
         // Just put the remaining moves back to mq->moves
-        struct move *next = NULL;
+        struct qmove *next = NULL;
         list_for_each_entry_safe(move, next, &trapezoid, node) {
             list_del(&move->node);
             list_add_before(&move->node, &end->node);
@@ -677,25 +726,16 @@ forward_pass(struct moveq *mq, struct move *end, int lazy, int *ret)
 }
 
 int __visible
-moveq_add(struct moveq *mq, int is_kinematic_move, double move_d
-          , double start_pos_x, double start_pos_y, double start_pos_z
-          , double axes_d_x, double axes_d_y, double axes_d_z
-          , double start_pos_e, double axes_d_e
+moveq_add(struct moveq *mq, double move_d
           , double junction_max_v2, double velocity
           , int accel_order, double accel, double smoothed_accel
           , double jerk, double min_jerk_limit_time, double accel_comp)
 {
-    struct move *m = move_alloc();
+    struct qmove *m = qmove_alloc();
 
     m->accel_order = accel_order;
-    m->accel_comp = is_kinematic_move ? accel_comp : 0.;
+    m->accel_comp = accel_comp;
     m->move_d = move_d;
-    m->is_kinematic_move = is_kinematic_move;
-
-    move_fill_pos(m
-            , start_pos_x, start_pos_y, start_pos_z
-            , axes_d_x, axes_d_y, axes_d_z
-            , start_pos_e, axes_d_e);
 
     fill_accel_group(&m->default_accel, m, accel, jerk, min_jerk_limit_time);
     m->max_cruise_v2 = velocity * velocity;
@@ -703,7 +743,7 @@ moveq_add(struct moveq *mq, int is_kinematic_move, double move_d
     m->smooth_delta_v2 = 2. * smoothed_accel * move_d;
 
     if (!list_empty(&mq->moves)) {
-        struct move *prev_move = list_last_entry(&mq->moves, struct move, node);
+        struct qmove *prev_move = list_last_entry(&mq->moves, struct qmove, node);
         m->max_smoothed_v2 =
             prev_move->max_smoothed_v2 + prev_move->smooth_delta_v2;
         m->max_smoothed_v2 = MIN(
@@ -715,45 +755,56 @@ moveq_add(struct moveq *mq, int is_kinematic_move, double move_d
 }
 
 double __visible
-moveq_getmove(struct moveq *mq, double print_time, struct move *m)
+moveq_getmove(struct moveq *mq, struct trap_accel_decel *accel_decel)
 {
-    assert(!list_empty(&mq->moves));
-    struct move *move = list_first_entry(&mq->moves, struct move, node);
+    memset(accel_decel, 0, sizeof(*accel_decel));
+    if (list_empty(&mq->moves)) {
+        errorf("Move queue is empty");
+        return ERROR_RET;
+    }
+    struct qmove *move = list_first_entry(&mq->moves, struct qmove, node);
+    accel_decel->accel_order = move->accel_order;
+    accel_decel->accel_comp = move->accel_comp;
     struct accel_group *accel = &move->accel_group;
     struct accel_group *decel = &move->decel_group;
     // Determine move velocities
-    double start_accel_v = accel->start_accel_v;
+    accel_decel->start_accel_v = accel->start_accel_v;
+    accel_decel->cruise_v = move->cruise_v;
     // Determine the effective accel and decel
-    double effective_accel = accel->effective_accel;
-    double effective_decel = decel->effective_accel;
+    accel_decel->effective_accel = accel->effective_accel;
+    accel_decel->effective_decel = decel->effective_accel;
     // Determine time spent in each portion of move (time is the
     // distance divided by average velocity)
-    double accel_t = accel->accel_t;
-    double accel_offset_t = accel->accel_offset_t;
-    double total_accel_t = accel->total_accel_t;
-    double decel_t = decel->accel_t;
-    double decel_offset_t = decel->accel_offset_t;
-    double total_decel_t = decel->total_accel_t;
-    double cruise_t = (move->move_d
-            - accel->accel_d - decel->accel_d) / move->cruise_v;
+    accel_decel->accel_t = accel->accel_t;
+    accel_decel->accel_offset_t = accel->accel_offset_t;
+    accel_decel->total_accel_t = accel->total_accel_t;
+    accel_decel->uncomp_accel_t = accel->uncomp_accel_t;
+    accel_decel->uncomp_accel_offset_t = accel->uncomp_accel_offset_t;
+    accel_decel->decel_t = decel->accel_t;
+    accel_decel->decel_offset_t = decel->accel_offset_t;
+    accel_decel->total_decel_t = decel->total_accel_t;
+    accel_decel->uncomp_decel_t = decel->uncomp_accel_t;
+    accel_decel->uncomp_decel_offset_t = decel->uncomp_accel_offset_t;
+    double cruise_d = move->move_d - accel->accel_d - decel->accel_d;
+    accel_decel->cruise_t = cruise_d / move->cruise_v;
     // Only used to track smootheness, can be deleted
     double start_v, end_v;
-    if (accel_t)
-        start_v = start_accel_v + effective_accel * accel_offset_t;
+    if (accel_decel->accel_t)
+        start_v = accel_decel->start_accel_v + accel_decel->effective_accel * accel_decel->accel_offset_t;
     else
-        start_v = move->cruise_v - effective_decel * decel_offset_t;
-    if (decel_t || cruise_t)
-        end_v = move->cruise_v - effective_decel * (decel_offset_t + decel_t);
+        start_v = move->cruise_v - accel_decel->effective_decel * accel_decel->decel_offset_t;
+    if (accel_decel->decel_t || accel_decel->cruise_t)
+        end_v = move->cruise_v - accel_decel->effective_decel * (accel_decel->decel_offset_t + accel_decel->decel_t);
     else
-        end_v = start_v + effective_accel * accel_t;
+        end_v = start_v + accel_decel->effective_accel * accel_decel->accel_t;
     // errorf("Move ms_v=%.3f, mc_v=%.3f, me_v=%.3f with"
     //        " move_d=%.6f, max_c_v2=%.3f, jct_v2=%.3f, accel=%.3f, decel=%.3f"
     //        ", accel_t=%.3f, cruise_t=%.3f, decel_t=%.3f"
     //        , start_v, move->cruise_v, end_v, move->move_d
     //        , move->max_cruise_v2, move->junction_max_v2
-    //        , effective_accel, effective_decel
-    //        , accel_t, cruise_t, decel_t);
-    if (cruise_t < -EPSILON) {
+    //        , accel_decel->effective_accel, accel_decel->effective_decel
+    //        , accel_decel->accel_t, accel_decel->cruise_t, accel_decel->decel_t);
+    if (accel_decel->cruise_t < -EPSILON) {
         errorf("Logic error: impossible move ms_v=%.3f, mc_v=%.3f"
                 ", me_v=%.3f, accel_d = %.3f, decel_d = %.3f"
                 " with move_d=%.3lf, accel=%.3f, decel=%.3f"
@@ -763,43 +814,36 @@ moveq_getmove(struct moveq *mq, double print_time, struct move *m)
                     , accel->max_jerk);
         return ERROR_RET;
     }
+    accel_decel->cruise_t = MAX(0., accel_decel->cruise_t);
     if (fabs(mq->prev_move_end_v - start_v) > 0.0001) {
         errorf("Logic error: velocity jump from %.6f to %.6f"
                 , mq->prev_move_end_v, start_v);
         return ERROR_RET;
     }
-    // Generate step times for the move
-    move_fill_trap(move, print_time,
-            accel_t, accel_offset_t, total_accel_t,
-            cruise_t,
-            decel_t, decel_offset_t, total_decel_t,
-            start_accel_v, move->cruise_v,
-            effective_accel, effective_decel, move->accel_comp);
-    *m = *move;
     // Remove processed move from the queue
     list_del(&move->node);
     free(move);
     mq->prev_move_end_v = end_v;
-    return accel_t + cruise_t + decel_t;
+    return accel_decel->accel_t + accel_decel->cruise_t + accel_decel->decel_t;
 }
 
 int __visible
-moveq_flush(struct moveq *mq, int lazy)
+moveq_plan(struct moveq *mq, int lazy)
 {
     if (list_empty(&mq->moves))
         return 0;
     double flush_starttime = get_monotonic();
     int ret;
-    struct move *flush_limit = backward_pass(mq, lazy, &ret);
+    struct qmove *flush_limit = backward_pass(mq, lazy, &ret);
     if (ret) return ret;
     if (lazy && !flush_limit)
         return 0;
-    struct move *last_flushed_move = forward_pass(mq, flush_limit, lazy, &ret);
+    struct qmove *last_flushed_move = forward_pass(mq, flush_limit, lazy, &ret);
     if (ret) return ret;
     if (!last_flushed_move)
         return 0;
     mq->prev_end_v2 = last_flushed_move->decel_group.max_start_v2;
-    struct move *move = NULL;
+    struct qmove *move = NULL;
     int flush_count = 0;
     list_for_each_entry(move, &mq->moves, node) {
         ++flush_count;

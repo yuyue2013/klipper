@@ -30,6 +30,18 @@ list_empty(const struct list_head *h)
     return h->root.next == &h->root;
 }
 
+static inline int
+list_is_first(const struct list_node *n, const struct list_head *h)
+{
+    return n->prev == &h->root;
+}
+
+static inline int
+list_is_last(const struct list_node *n, const struct list_head *h)
+{
+    return n->next == &h->root;
+}
+
 static inline void
 list_del(struct list_node *n)
 {

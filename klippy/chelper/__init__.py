@@ -15,14 +15,15 @@ COMPILE_CMD = ("gcc -Wall -g -O2 -shared -fPIC"
                " -flto -fwhole-program -fno-use-linker-plugin"
                " -o %s %s")
 SOURCE_FILES = [
-    'pyhelper.c', 'serialqueue.c', 'stepcompress.c', 'itersolve.c', 'moveq.c',
+    'pyhelper.c', 'serialqueue.c', 'stepcompress.c', 'itersolve.c',
+    'moveq.c', 'trapq.c', 'scurve.c',
     'kin_cartesian.c', 'kin_corexy.c', 'kin_delta.c', 'kin_polar.c',
     'kin_winch.c', 'kin_extruder.c',
 ]
 DEST_LIB = "c_helper.so"
 OTHER_FILES = [
     'list.h', 'serialqueue.h', 'stepcompress.h', 'itersolve.h', 'moveq.h',
-    'pyhelper.h'
+    'pyhelper.h', 'trapq.h', 'scurve.h',
 ]
 
 defs_stepcompress = """
@@ -44,18 +45,11 @@ defs_stepcompress = """
 """
 
 defs_itersolve = """
-    struct move *move_alloc(void);
-    void move_fill_pos(struct move *m
-        , double start_pos_x, double start_pos_y, double start_pos_z
-        , double axes_d_x, double axes_d_y, double axes_d_z
-        , double start_pos_e, double axes_d_e);
-    void move_fill_trap(struct move *m, double print_time
-        , double accel_t, double accel_offset_t, double total_accel_t
-        , double cruise_t
-        , double decel_t, double decel_offset_t, double total_decel_t
-        , double start_accel_v, double cruise_v
-        , double effective_accel, double effective_decel, double accel_comp);
-    int32_t itersolve_gen_steps(struct stepper_kinematics *sk, struct move *m);
+    int32_t itersolve_generate_steps(struct stepper_kinematics *sk
+        , double flush_time);
+    double itersolve_check_active(struct stepper_kinematics *sk
+        , double flush_time);
+    void itersolve_set_trapq(struct stepper_kinematics *sk, struct trapq *tq);
     void itersolve_set_stepcompress(struct stepper_kinematics *sk
         , struct stepcompress *sc, double step_dist);
     double itersolve_calc_position_from_coord(struct stepper_kinematics *sk
@@ -63,18 +57,28 @@ defs_itersolve = """
     void itersolve_set_commanded_pos(struct stepper_kinematics *sk, double pos);
     double itersolve_get_commanded_pos(struct stepper_kinematics *sk);
 """
+
 defs_moveq = """
     struct moveq *moveq_alloc(void);
     void moveq_reset(struct moveq *mq);
-    int moveq_add(struct moveq *mq, int is_kinematic_move, double move_d
-        , double start_pos_x, double start_pos_y, double start_pos_z
-        , double axes_d_x, double axes_d_y, double axes_d_z
-        , double start_pos_e, double axes_d_e
+    int moveq_add(struct moveq *mq, double move_d
         , double junction_max_v2, double velocity
         , int accel_order, double accel, double smoothed_accel
         , double jerk, double min_jerk_limit_time, double accel_comp);
-    int moveq_flush(struct moveq *mq, int lazy);
-    double moveq_getmove(struct moveq *mq, double print_time, struct move *m);
+    int moveq_plan(struct moveq *mq, int lazy);
+    double moveq_getmove(struct moveq *mq
+        , struct trap_accel_decel *accel_decel);
+"""
+
+defs_trapq = """
+    struct trap_accel_decel *accel_decel_alloc(void);
+    void trapq_append(struct trapq *tq, double print_time
+        , double start_pos_x, double start_pos_y, double start_pos_z
+        , double axes_d_x, double axes_d_y, double axes_d_z
+        , const struct trap_accel_decel *accel_decel);
+    struct trapq *trapq_alloc(void);
+    void trapq_free(struct trapq *tq);
+    void trapq_free_moves(struct trapq *tq, double print_time);
 """
 
 defs_kin_cartesian = """
@@ -101,7 +105,9 @@ defs_kin_winch = """
 
 defs_kin_extruder = """
     struct stepper_kinematics *extruder_stepper_alloc(void);
-    double extruder_move_fill(struct move *extr, const struct move *kin);
+    void extruder_add_move(struct trapq *tq, double print_time
+        , double start_e_pos, double extrude_r
+        , const struct trap_accel_decel *accel_decel);
 """
 
 defs_serialqueue = """
@@ -143,7 +149,7 @@ defs_std = """
 
 defs_all = [
     defs_pyhelper, defs_serialqueue, defs_std,
-    defs_stepcompress, defs_itersolve, defs_moveq,
+    defs_stepcompress, defs_itersolve, defs_moveq, defs_trapq,
     defs_kin_cartesian, defs_kin_corexy, defs_kin_delta, defs_kin_polar,
     defs_kin_winch, defs_kin_extruder
 ]

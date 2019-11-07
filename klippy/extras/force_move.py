@@ -1,6 +1,6 @@
 # Utility for manually moving a stepper for diagnostic purposes
 #
-# Copyright (C) 2018  Kevin O'Connor <kevin@koconnor.net>
+# Copyright (C) 2018-2019  Kevin O'Connor <kevin@koconnor.net>
 #
 # This file may be distributed under the terms of the GNU GPLv3 license.
 import math, logging
@@ -28,11 +28,12 @@ class ForceMove:
         self.steppers = {}
         # Setup iterative solver
         ffi_main, ffi_lib = chelper.get_ffi()
-        self.cmove = ffi_main.gc(ffi_lib.move_alloc(), ffi_lib.free)
-        self.move_fill_pos = ffi_lib.move_fill_pos
-        self.move_fill_trap = ffi_lib.move_fill_trap
+        self.trapq = ffi_main.gc(ffi_lib.trapq_alloc(), ffi_lib.trapq_free)
+        self.trapq_append = ffi_lib.trapq_append
+        self.trapq_free_moves = ffi_lib.trapq_free_moves
         self.stepper_kinematics = ffi_main.gc(
             ffi_lib.cartesian_stepper_alloc('x'), ffi_lib.free)
+        ffi_lib.itersolve_set_trapq(self.stepper_kinematics, self.trapq)
         # Register commands
         self.gcode = self.printer.lookup_object('gcode')
         self.gcode.register_command('STEPPER_BUZZ', self.cmd_STEPPER_BUZZ,
@@ -53,10 +54,8 @@ class ForceMove:
         if not was_enable:
             stepper.motor_enable(print_time, 1)
             toolhead.dwell(STALL_TIME)
-        was_ignore = stepper.set_ignore_move(False)
-        return was_enable, was_ignore
-    def restore_enable(self, stepper, was_enable, was_ignore):
-        stepper.set_ignore_move(was_ignore)
+        return was_enable
+    def restore_enable(self, stepper, was_enable):
         if not was_enable:
             toolhead = self.printer.lookup_object('toolhead')
             toolhead.dwell(STALL_TIME)
@@ -69,13 +68,11 @@ class ForceMove:
         prev_sk = stepper.set_stepper_kinematics(self.stepper_kinematics)
         stepper.set_position((0., 0., 0.))
         accel_t, cruise_t, cruise_v = calc_move_time(dist, speed, accel)
-        self.move_fill_trap(self.cmove, print_time,
-                            accel_t, 0., accel_t,
-                            cruise_t,
-                            accel_t, 0., accel_t,
-                            0., cruise_v, accel, accel, 0.)
-        self.move_fill_pos(self.cmove, 0., 0., 0., dist, 0., 0., 0., 0.)
-        stepper.step_itersolve(self.cmove)
+        self.trapq_append(self.trapq, print_time, accel_t, cruise_t, accel_t,
+                          0., 0., 0., dist, 0., 0., 0., cruise_v, accel)
+        print_time += accel_t + cruise_t + accel_t
+        stepper.generate_steps(print_time)
+        self.trapq_free_moves(self.trapq, print_time)
         stepper.set_stepper_kinematics(prev_sk)
         toolhead.dwell(accel_t + cruise_t + accel_t)
     def _lookup_stepper(self, params):
@@ -87,14 +84,14 @@ class ForceMove:
     def cmd_STEPPER_BUZZ(self, params):
         stepper = self._lookup_stepper(params)
         logging.info("Stepper buzz %s", stepper.get_name())
-        was_enable, was_ignore = self.force_enable(stepper)
+        was_enable = self.force_enable(stepper)
         toolhead = self.printer.lookup_object('toolhead')
         for i in range(10):
             self.manual_move(stepper, 1., BUZZ_VELOCITY)
             toolhead.dwell(.050)
             self.manual_move(stepper, -1., BUZZ_VELOCITY)
             toolhead.dwell(.450)
-        self.restore_enable(stepper, was_enable, was_ignore)
+        self.restore_enable(stepper, was_enable)
     cmd_FORCE_MOVE_help = "Manually move a stepper; invalidates kinematics"
     def cmd_FORCE_MOVE(self, params):
         stepper = self._lookup_stepper(params)
@@ -103,9 +100,8 @@ class ForceMove:
         accel = self.gcode.get_float('ACCEL', params, 0., minval=0.)
         logging.info("FORCE_MOVE %s distance=%.3f velocity=%.3f accel=%.3f",
                      stepper.get_name(), distance, speed, accel)
-        was_enable, was_ignore = self.force_enable(stepper)
+        self.force_enable(stepper)
         self.manual_move(stepper, distance, speed, accel)
-        self.restore_enable(stepper, True, was_ignore)
     cmd_SET_KINEMATIC_POSITION_help = "Force a low-level kinematic position"
     def cmd_SET_KINEMATIC_POSITION(self, params):
         toolhead = self.printer.lookup_object('toolhead')

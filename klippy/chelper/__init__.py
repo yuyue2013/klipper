@@ -74,7 +74,7 @@ defs_trapq = """
     struct trap_accel_decel *accel_decel_alloc(void);
     void trapq_append(struct trapq *tq, double print_time
         , double start_pos_x, double start_pos_y, double start_pos_z
-        , double axes_d_x, double axes_d_y, double axes_d_z
+        , double axes_r_x, double axes_r_y, double axes_r_z
         , const struct trap_accel_decel *accel_decel);
     struct trapq *trapq_alloc(void);
     void trapq_free(struct trapq *tq);

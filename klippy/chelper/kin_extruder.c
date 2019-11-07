@@ -29,6 +29,7 @@ extruder_stepper_alloc(void)
     return sk;
 }
 
+// Populate a 'struct move' with an extruder velocity trapezoid
 void __visible
 extruder_add_move(struct trapq *tq, double print_time
                   , double start_e_pos, double extrude_r

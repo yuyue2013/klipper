@@ -36,7 +36,7 @@ struct move *move_alloc(void);
 struct trap_accel_decel *accel_decel_alloc(void);
 void trapq_append(struct trapq *tq, double print_time
                   , double start_pos_x, double start_pos_y, double start_pos_z
-                  , double axes_d_x, double axes_d_y, double axes_d_z
+                  , double axes_r_x, double axes_r_y, double axes_r_z
                   , const struct trap_accel_decel *accel_decel);
 double move_get_distance(struct move *m, double move_time);
 struct coord move_get_coord(struct move *m, double move_time);

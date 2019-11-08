@@ -87,7 +87,7 @@ will most likely list
 Check out the new branch:
 ```
 $ git fetch s-curve-exp
-$ git checkout s-curve-exp/scurve-c-combine
+$ git checkout s-curve-exp/scurve-c-combine-smoothpa
 ```
 
 Add `acceleration_order` paramter to your `printer.cfg`
@@ -414,7 +414,8 @@ S-Curve acceleration notes
 ==========
  * S-Curve reduces acceleration of short moves, effectively slowing them down
     * this can be disabled by setting very high `max_jerk` value in the config,
-      e.g. 1000000, but this is not advised
+      e.g. 1000000, but this is not advised, unless acceleration compensation
+      is enabled
     * jerk limit is not applied to extrude-only moves, they are always executed
       with the full `max_extrude_only_accel` acceleration.
  * When the move must both accelerate and decelerate, and acceleration for the

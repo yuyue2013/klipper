@@ -55,9 +55,9 @@ class ManualStepper:
         accel_t, cruise_t, cruise_v = force_move.calc_move_time(
             dist, speed, accel)
         self.move_fill(self.cmove, self.next_cmd_time,
-                       accel_t, cruise_t, accel_t,
+                       accel_t, 0., accel_t, cruise_t, accel_t, 0., accel_t,
                        cp, 0., 0., dist, 0., 0.,
-                       0., cruise_v, accel)
+                       0., cruise_v, accel, accel)
         self.stepper.step_itersolve(self.cmove)
         self.next_cmd_time += accel_t + cruise_t + accel_t
         self.sync_print_time()

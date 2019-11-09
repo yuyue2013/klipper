@@ -34,72 +34,95 @@ move_set_accel_order(struct move *m, int accel_order)
     m->accel_order = accel_order;
 }
 
+static void
+move_fill_bezier2(struct move_accel *ma, double start_accel_v
+                  , double effective_accel, double accel_offset_t)
+{
+    ma->offset_t = accel_offset_t;
+    ma->c2 = .5 * effective_accel;
+    ma->c1 = start_accel_v;
+    ma->c0 = (-ma->c2 * ma->offset_t - ma->c1) * ma->offset_t;
+}
+
 // Determine the coefficients for a 4th order bezier position function
 static void
-move_fill_bezier4(struct move_accel *ma, double start_v
-                  , double accel, double accel_t)
+move_fill_bezier4(struct move_accel *ma, double start_accel_v
+        , double effective_accel, double total_accel_t, double accel_offset_t)
 {
-    if (!accel_t) {
-        ma->c4 = ma->c3 = ma->c1 = 0.;
+    ma->offset_t = accel_offset_t;
+    if (!total_accel_t) {
+        ma->c4 = ma->c3 = ma->c1 = ma->c0 = 0.;
         return;
     }
-    double inv_accel_t = 1. / accel_t;
-    double accel_div_accel_t = accel * inv_accel_t;
+    double inv_accel_t = 1. / total_accel_t;
+    double accel_div_accel_t = effective_accel * inv_accel_t;
     double accel_div_accel_t2 = accel_div_accel_t * inv_accel_t;
     ma->c4 = -.5 * accel_div_accel_t2;
     ma->c3 = accel_div_accel_t;
-    ma->c1 = start_v;
+    ma->c1 = start_accel_v;
+    ma->c0 = 0;
+    ma->c0 = -move_eval_accel(ma, 0);
 }
 
 // Determine the coefficients for a 6th order bezier position function
 static void
-move_fill_bezier6(struct move_accel *ma, double start_v
-                  , double accel, double accel_t)
+move_fill_bezier6(struct move_accel *ma, double start_accel_v
+        , double effective_accel, double total_accel_t, double accel_offset_t)
 {
-    if (!accel_t) {
-        ma->c6 = ma->c5 = ma->c4 = ma->c1 = 0.;
+    ma->offset_t = accel_offset_t;
+    if (!total_accel_t) {
+        ma->c6 = ma->c5 = ma->c4 = ma->c1 = ma->c0 = 0.;
         return;
     }
-    double inv_accel_t = 1. / accel_t;
-    double accel_div_accel_t2 = accel * inv_accel_t * inv_accel_t;
+    double inv_accel_t = 1. / total_accel_t;
+    double accel_div_accel_t2 = effective_accel * inv_accel_t * inv_accel_t;
     double accel_div_accel_t3 = accel_div_accel_t2 * inv_accel_t;
     double accel_div_accel_t4 = accel_div_accel_t3 * inv_accel_t;
     ma->c6 = accel_div_accel_t4;
     ma->c5 = -3. * accel_div_accel_t3;
     ma->c4 = 2.5 * accel_div_accel_t2;
-    ma->c1 = start_v;
+    ma->c1 = start_accel_v;
+    ma->c0 = 0;
+    ma->c0 = -move_eval_accel(ma, 0);
 }
 
 // Populate a 'struct move' with a velocity trapezoid
 void __visible
 move_fill(struct move *m, double print_time
-          , double accel_t, double cruise_t, double decel_t
+          , double accel_t, double accel_offset_t, double total_accel_t
+          , double cruise_t
+          , double decel_t, double decel_offset_t, double total_decel_t
           , double start_pos_x, double start_pos_y, double start_pos_z
           , double axes_d_x, double axes_d_y, double axes_d_z
-          , double start_v, double cruise_v, double accel)
+          , double start_accel_v, double cruise_v
+          , double effective_accel, double effective_decel)
 {
     // Setup velocity trapezoid
     m->print_time = print_time;
     m->move_t = accel_t + cruise_t + decel_t;
     m->accel_t = accel_t;
     m->cruise_t = cruise_t;
-    m->cruise_start_d = accel_t * .5 * (cruise_v + start_v);
-    m->decel_start_d = m->cruise_start_d + cruise_t * cruise_v;
 
     // Setup for accel/cruise/decel phases
     m->cruise_v = cruise_v;
     if (m->accel_order == 4) {
-        move_fill_bezier4(&m->accel, start_v, accel, accel_t);
-        move_fill_bezier4(&m->decel, cruise_v, -accel, decel_t);
+        move_fill_bezier4(&m->accel, start_accel_v, effective_accel
+                , total_accel_t, accel_offset_t);
+        move_fill_bezier4(&m->decel, cruise_v, -effective_decel
+                , total_decel_t, decel_offset_t);
     } else if (m->accel_order == 6) {
-        move_fill_bezier6(&m->accel, start_v, accel, accel_t);
-        move_fill_bezier6(&m->decel, cruise_v, -accel, decel_t);
+        move_fill_bezier6(&m->accel, start_accel_v, effective_accel
+                , total_accel_t, accel_offset_t);
+        move_fill_bezier6(&m->decel, cruise_v, -effective_decel
+                , total_decel_t, decel_offset_t);
     } else {
-        m->accel.c1 = start_v;
-        m->accel.c2 = .5 * accel;
-        m->decel.c1 = cruise_v;
-        m->decel.c2 = -m->accel.c2;
+        move_fill_bezier2(&m->accel, start_accel_v, effective_accel
+                , accel_offset_t);
+        move_fill_bezier2(&m->decel, cruise_v, -effective_decel
+                , decel_offset_t);
     }
+    m->cruise_start_d = move_eval_accel(&m->accel, accel_t);
+    m->decel_start_d = m->cruise_start_d + cruise_t * cruise_v;
 
     // Setup for move_get_coord()
     m->start_pos.x = start_pos_x;
@@ -110,19 +133,6 @@ move_fill(struct move *m, double print_time
     m->axes_r.x = axes_d_x * inv_move_d;
     m->axes_r.y = axes_d_y * inv_move_d;
     m->axes_r.z = axes_d_z * inv_move_d;
-}
-
-// Find the distance travel during acceleration/deceleration
-static inline double
-move_eval_accel(struct move_accel *ma, double move_time)
-{
-    double v = ma->c6;
-    v = ma->c5 + v * move_time;
-    v = ma->c4 + v * move_time;
-    v = ma->c3 + v * move_time;
-    v = ma->c2 + v * move_time;
-    v = ma->c1 + v * move_time;
-    return v * move_time;
 }
 
 // Return the distance moved given a time in a move
@@ -156,6 +166,23 @@ move_get_coord(struct move *m, double move_time)
 /****************************************************************
  * Iterative solver
  ****************************************************************/
+
+double __visible move_get_time(struct move *m, double move_distance)
+{
+    double low = 0;
+    double high = m->move_t;
+    if (move_get_distance(m, high) <= move_distance) return high;
+    if (move_get_distance(m, low) > move_distance) return low;
+    while (high - low > .000000001) {
+        double guess_time = (high + low) * .5;
+        if (move_get_distance(m, guess_time) > move_distance) {
+            high = guess_time;
+        } else {
+            low = guess_time;
+        }
+    }
+    return (high + low) * .5;
+}
 
 struct timepos {
     double time, position;
@@ -280,7 +307,8 @@ itersolve_calc_position_from_coord(struct stepper_kinematics *sk
 {
     struct move m;
     memset(&m, 0, sizeof(m));
-    move_fill(&m, 0., 0., 1., 0., x, y, z, 0., 1., 0., 0., 1., 0.);
+    move_fill(&m, 0., 0., 0., 0., 1., 0., 0., 0., x, y, z, 0., 1., 0., 0., 1.
+            , 0., 0.);
     return sk->calc_position(sk, &m, 0.);
 }
 

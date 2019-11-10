@@ -276,6 +276,12 @@ Some prerequisites:
 - compute `min_jerk_limit_time` and `max_jerk` for the baseline;
 - store these parameters in the config.
 
+NB: acceleration compensation improves toolhead cornering. If Pressure Advance
+was enabled, it is advised to disable it for acceleration compensation tuning.
+Once it is tuned, Pressure Advance can be re-enabled, but it is better to
+[tune](Pressure_Advance.md#tuning-pressure-advance) PA value afterwards: there
+is a good chance that slightly lower PA value will be needed.
+
 Now set the desired acceleration, e.g.:
 `SET_VELOCITY_LIMIT ACCEL=5000 ACCEL_TO_DECEL=3000`. Set very high max jerk
 parameter, e.g. `SET_VELOCITY_LIMIT JERK=1000000`. Print the test model

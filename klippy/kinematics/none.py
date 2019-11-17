@@ -9,13 +9,11 @@ class NoneKinematics:
         pass
     def get_steppers(self, flags=""):
         return []
-    def calc_position(self):
+    def calc_tag_position(self):
         return [0, 0, 0]
     def set_position(self, newpos, homing_axes):
         pass
     def home(self, homing_state):
-        pass
-    def motor_off(self, print_time):
         pass
     def check_move(self, move):
         pass

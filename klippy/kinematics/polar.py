@@ -20,7 +20,9 @@ class PolarKinematics:
                                           for s in r.get_steppers() ]
         for s in self.get_steppers():
             s.set_trapq(toolhead.get_trapq())
-            toolhead.register_move_handler(s.generate_steps)
+            toolhead.register_step_generator(s.generate_steps)
+        config.get_printer().register_event_handler("stepper_enable:motor_off",
+                                                    self._motor_off)
         # Setup boundary checks
         max_velocity, max_accel = toolhead.get_max_velocity()
         self.max_z_velocity = config.getfloat(
@@ -38,10 +40,10 @@ class PolarKinematics:
         if flags == "Z":
             return self.rails[1].get_steppers()
         return list(self.steppers)
-    def calc_position(self):
-        bed_angle = self.steppers[0].get_commanded_position()
-        arm_pos = self.rails[0].get_commanded_position()
-        z_pos = self.rails[1].get_commanded_position()
+    def calc_tag_position(self):
+        bed_angle = self.steppers[0].get_tag_position()
+        arm_pos = self.rails[0].get_tag_position()
+        z_pos = self.rails[1].get_tag_position()
         return [math.cos(bed_angle) * arm_pos, math.sin(bed_angle) * arm_pos,
                 z_pos]
     def set_position(self, newpos, homing_axes):
@@ -82,11 +84,9 @@ class PolarKinematics:
             self._home_axis(homing_state, 0, self.rails[0])
         if home_z:
             self._home_axis(homing_state, 2, self.rails[1])
-    def motor_off(self, print_time):
+    def _motor_off(self, print_time):
         self.limit_z = [(1.0, -1.0)]
         self.limit_xy2 = -1.
-        for s in self.steppers:
-            s.motor_enable(print_time, 0)
     def check_move(self, move):
         end_pos = move.end_pos
         xy2 = end_pos[0]**2 + end_pos[1]**2

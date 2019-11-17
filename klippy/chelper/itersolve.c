@@ -154,7 +154,7 @@ itersolve_generate_steps(struct stepper_kinematics *sk, double flush_time)
     for (;;) {
         if (last_flush_time >= flush_time)
             return 0;
-        double start = m->print_time, end = m->print_time + m->move_t;
+        double start = m->print_time, end = start + m->move_t;
         if (start < last_flush_time)
             start = last_flush_time;
         if (end > flush_time)
@@ -223,7 +223,7 @@ itersolve_set_stepcompress(struct stepper_kinematics *sk
     sk->step_dist = step_dist;
 }
 
-double __visible
+static double
 itersolve_calc_position_from_coord(struct stepper_kinematics *sk
                                    , double x, double y, double z)
 {
@@ -232,13 +232,15 @@ itersolve_calc_position_from_coord(struct stepper_kinematics *sk
     m.start_pos.x = x;
     m.start_pos.y = y;
     m.start_pos.z = z;
-    return sk->calc_position_cb(sk, &m, 0.);
+    m.move_t = 1000.;
+    return sk->calc_position_cb(sk, &m, 500.);
 }
 
 void __visible
-itersolve_set_commanded_pos(struct stepper_kinematics *sk, double pos)
+itersolve_set_position(struct stepper_kinematics *sk
+                       , double x, double y, double z)
 {
-    sk->commanded_pos = pos;
+    sk->commanded_pos = itersolve_calc_position_from_coord(sk, x, y, z);
 }
 
 double __visible

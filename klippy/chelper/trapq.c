@@ -173,6 +173,8 @@ trapq_find_move(struct move *m, double *ptime)
     }
 }
 
+#define NEVER_TIME 9999999999999999.9
+
 // Allocate a new 'trapq' object
 struct trapq * __visible
 trapq_alloc(void)
@@ -181,7 +183,7 @@ trapq_alloc(void)
     memset(tq, 0, sizeof(*tq));
     list_init(&tq->moves);
     struct move *head_sentinel = move_alloc(), *tail_sentinel = move_alloc();
-    tail_sentinel->move_t = 9999999999999999.;
+    tail_sentinel->print_time = tail_sentinel->move_t = NEVER_TIME;
     list_add_head(&head_sentinel->node, &tq->moves);
     list_add_tail(&tail_sentinel->node, &tq->moves);
     return tq;
@@ -208,6 +210,12 @@ trapq_check_sentinels(struct trapq *tq)
         // Already up to date
         return;
     struct move *m = list_prev_entry(tail_sentinel, node);
+    struct move *head_sentinel = list_first_entry(&tq->moves, struct move,node);
+    if (m == head_sentinel) {
+        // No moves at all on this list
+        tail_sentinel->print_time = NEVER_TIME;
+        return;
+    }
     tail_sentinel->print_time = m->print_time + m->move_t;
     tail_sentinel->start_pos = move_get_coord(m, m->move_t);
 }
@@ -238,13 +246,12 @@ trapq_free_moves(struct trapq *tq, double print_time)
     struct move *tail_sentinel = list_last_entry(&tq->moves, struct move, node);
     for (;;) {
         struct move *m = list_next_entry(head_sentinel, node);
-        if (m == tail_sentinel || m->print_time + m->move_t > print_time) {
-            if (m == tail_sentinel)
-                tail_sentinel->print_time = 0.;
-            head_sentinel->move_t = m->print_time;
-            head_sentinel->start_pos = m->start_pos;
-            break;
+        if (m == tail_sentinel) {
+            tail_sentinel->print_time = NEVER_TIME;
+            return;
         }
+        if (m->print_time + m->move_t > print_time)
+            return;
         list_del(&m->node);
         free(m);
     }

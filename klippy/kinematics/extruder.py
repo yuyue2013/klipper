@@ -60,12 +60,13 @@ class PrinterExtruder:
                                        ffi_lib.free)
         self.stepper.set_stepper_kinematics(self.sk_extruder)
         self.stepper.set_trapq(self.trapq)
-        toolhead.register_move_handler(self.stepper.generate_steps)
+        toolhead.register_step_generator(self.stepper.generate_steps)
         self.extruder_set_pressure = ffi_lib.extruder_set_pressure
         self._set_pressure_advance(pressure_advance, smooth_time)
-        # Setup SET_PRESSURE_ADVANCE command
+        # Register commands
         gcode = self.printer.lookup_object('gcode')
         if self.name == 'extruder':
+            toolhead.set_extruder(self, self.extrude_pos)
             gcode.register_mux_command("SET_PRESSURE_ADVANCE", "EXTRUDER", None,
                                        self.cmd_default_SET_PRESSURE_ADVANCE,
                                        desc=self.cmd_SET_PRESSURE_ADVANCE_help)
@@ -82,7 +83,8 @@ class PrinterExtruder:
         if not pressure_advance:
             new_smooth_time = 0.
         toolhead = self.printer.lookup_object("toolhead")
-        toolhead.note_flush_delay(new_smooth_time, old_delay=old_smooth_time)
+        toolhead.note_step_generation_scan_time(new_smooth_time,
+                                                old_delay=old_smooth_time)
         self.extruder_set_pressure(self.sk_extruder,
                                    pressure_advance, new_smooth_time)
         self.pressure_advance = pressure_advance
@@ -94,15 +96,13 @@ class PrinterExtruder:
     def get_heater(self):
         return self.heater
     def set_active(self, print_time, is_active):
-        return self.extrude_pos # XXX - recalc on set_active
+        return self.extrude_pos
     def get_activate_gcode(self, is_active):
         if is_active:
             return self.activate_gcode.render()
         return self.deactivate_gcode.render()
     def stats(self, eventtime):
         return self.heater.stats(eventtime)
-    def motor_off(self, print_time):
-        self.stepper.motor_enable(print_time, 0)
     def check_move(self, move):
         axis_r = move.axes_r[3]
         if not self.heater.can_extrude:
@@ -131,17 +131,14 @@ class PrinterExtruder:
                 "See the 'max_extrude_cross_section' config option for details"
                 % (area, self.max_extrude_ratio * self.filament_area))
     def calc_junction(self, prev_move, move):
-        axis_r = move.axes_r[3]
-        prev_axis_r = prev_move.axes_r[3]
-        diff_r = axis_r - prev_axis_r
+        diff_r = move.axes_r[3] - prev_move.axes_r[3]
         if diff_r:
             return (self.instant_corner_v / abs(diff_r))**2
         return move.max_cruise_v2
     def move(self, print_time, move, ctrap_accel_decel):
-        axis_d = move.axes_d[3]
         axis_r = move.axes_r[3]
         is_pa = 0.
-        if axis_d >= 0. and (move.axes_d[0] or move.axes_d[1]):
+        if axis_r > 0. and (move.axes_d[0] or move.axes_d[1]):
             is_pa = 1.
         self.extruder_add_move(self.trapq, print_time,
                                move.start_pos[3], self.extrude_pa_pos,
@@ -149,7 +146,7 @@ class PrinterExtruder:
                                ctrap_accel_decel)
         self.extrude_pos = move.end_pos[3]
         if is_pa:
-            self.extrude_pa_pos += axis_d
+            self.extrude_pa_pos += move.axes_d[3]
     cmd_SET_PRESSURE_ADVANCE_help = "Set pressure advance parameters"
     def cmd_default_SET_PRESSURE_ADVANCE(self, params):
         extruder = self.printer.lookup_object('toolhead').get_extruder()
@@ -174,13 +171,13 @@ class DummyExtruder:
         return 0.
     def update_move_time(self, flush_time):
         pass
-    def motor_off(self, move_time):
-        pass
     def check_move(self, move):
         raise homing.EndstopMoveError(
             move.end_pos, "Extrude when no extruder present")
     def calc_junction(self, prev_move, move):
         return move.max_cruise_v2
+    def get_heater(self):
+        raise homing.CommandError("Extruder not configured")
 
 def add_printer_objects(config):
     printer = config.get_printer()
@@ -192,15 +189,3 @@ def add_printer_objects(config):
             break
         pe = PrinterExtruder(config.getsection(section), i)
         printer.add_object(section, pe)
-
-def get_printer_extruders(printer):
-    out = []
-    for i in range(99):
-        section = 'extruder'
-        if i:
-            section = 'extruder%d' % (i,)
-        extruder = printer.lookup_object(section, None)
-        if extruder is None:
-            break
-        out.append(extruder)
-    return out

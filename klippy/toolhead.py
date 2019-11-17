@@ -241,22 +241,21 @@ class ToolHead:
         self.printer.try_load_module(config, "manual_probe")
         self.printer.try_load_module(config, "tuning_tower")
     # Print time tracking
-    def _update_move_time(self, next_print_time, lazy=True):
+    def _update_move_time(self, next_print_time):
         batch_time = MOVE_BATCH_TIME
-        sg_flush_delay = mcu_flush_delay = 0.
-        if lazy:
-            sg_flush_delay = self.kin_flush_delay
-            mcu_flush_delay = self.move_flush_time
+        kin_flush_delay = self.kin_flush_delay
+        lkft = self.last_kin_flush_time
         while 1:
             self.print_time = min(self.print_time + batch_time, next_print_time)
-            flush_time = self.print_time - sg_flush_delay
+            sg_flush_time = max(lkft, self.print_time - kin_flush_delay)
             for sg in self.step_generators:
-                sg(flush_time)
-            self.trapq_free_moves(self.trapq, flush_time - sg_flush_delay)
-            self.extruder.update_move_time(flush_time - sg_flush_delay)
-            flush_time -= mcu_flush_delay
+                sg(sg_flush_time)
+            free_time = max(lkft, sg_flush_time - kin_flush_delay)
+            self.trapq_free_moves(self.trapq, free_time)
+            self.extruder.update_move_time(free_time)
+            mcu_flush_time = max(lkft, sg_flush_time - self.move_flush_time)
             for m in self.all_mcus:
-                m.flush_moves(flush_time)
+                m.flush_moves(mcu_flush_time)
             if self.print_time >= next_print_time:
                 break
     def _calc_print_time(self):
@@ -315,8 +314,8 @@ class ToolHead:
         self.move_queue.set_flush_time(self.buffer_time_high)
         self.idle_flush_print_time = 0.
         flush_time = self.last_kin_move_time + self.kin_flush_delay
-        self.last_kin_flush_time = max(self.print_time, flush_time)
-        self._update_move_time(self.last_kin_flush_time, lazy=False)
+        self.last_kin_flush_time = max(self.last_kin_flush_time, flush_time)
+        self._update_move_time(max(self.print_time, self.last_kin_flush_time))
     def _flush_lookahead(self):
         if self.special_queuing_state:
             return self.flush_step_generation()

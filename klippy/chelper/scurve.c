@@ -1,3 +1,10 @@
+// Bezier curve acceleration
+//
+// Copyright (C) 2018-2019  Kevin O'Connor <kevin@koconnor.net>
+// Copyright (C) 2019  Dmitry Butyugin <dmbutyugin@google.com>
+//
+// This file may be distributed under the terms of the GNU GPLv3 license.
+
 #include <math.h> // fabs
 #include <string.h> // memset
 

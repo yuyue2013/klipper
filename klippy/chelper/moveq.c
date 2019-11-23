@@ -1,3 +1,10 @@
+// Look-ahead movement planning queue
+//
+// Copyright (C) 2016-2019  Kevin O'Connor <kevin@koconnor.net>
+// Copyright (C) 2019  Dmitry Butyugin <dmbutyugin@google.com>
+//
+// This file may be distributed under the terms of the GNU GPLv3 license.
+
 #include <assert.h> // assert
 #include <math.h> // sqrt
 #include <stddef.h> // offsetof

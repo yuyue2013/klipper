@@ -17,6 +17,7 @@ struct smooth_axis {
     struct stepper_kinematics *orig_sk;
     double x_half_smooth_time, x_inv_smooth_sq_time;
     double y_half_smooth_time, y_inv_smooth_sq_time;
+    double x_accel_comp, y_accel_comp;
     struct move m;
 };
 
@@ -33,6 +34,20 @@ smooth_x_calc_position(struct stepper_kinematics *sk, struct move *m
     // Calculate average position over smooth_time window
     double area = trapq_integrate_w(m, 'x', move_time, hst);
     sa->m.start_pos.x = area * sa->x_inv_smooth_sq_time;
+    if (sa->x_accel_comp) {
+        double start_time = move_time - hst;
+        struct move *sm = trapq_find_move(m, &start_time);
+        double end_time = move_time + hst;
+        struct move *em = trapq_find_move(m, &end_time);
+        double accel = sa->x_inv_smooth_sq_time * (
+                (em->start_pos.x
+                 + em->axes_r.x * move_get_distance(em, end_time))
+                + (sm->start_pos.x
+                    + sm->axes_r.x * move_get_distance(sm, start_time))
+                - 2. * (m->start_pos.x
+                    + m->axes_r.x * move_get_distance(m, move_time)));
+        sa->m.start_pos.x += sa->x_accel_comp * accel;
+    }
     return sa->orig_sk->calc_position_cb(sa->orig_sk, &sa->m, DUMMY_T);
 }
 
@@ -47,6 +62,20 @@ smooth_y_calc_position(struct stepper_kinematics *sk, struct move *m
     // Calculate average position over smooth_time window
     double area = trapq_integrate_w(m, 'y', move_time, hst);
     sa->m.start_pos.y = area * sa->y_inv_smooth_sq_time;
+    if (sa->y_accel_comp) {
+        double start_time = move_time - hst;
+        struct move *sm = trapq_find_move(m, &start_time);
+        double end_time = move_time + hst;
+        struct move *em = trapq_find_move(m, &end_time);
+        double accel = sa->y_inv_smooth_sq_time * (
+                (em->start_pos.y
+                 + em->axes_r.y * move_get_distance(em, end_time))
+                + (sm->start_pos.y
+                    + sm->axes_r.y * move_get_distance(sm, start_time))
+                - 2. * (m->start_pos.y
+                    + m->axes_r.y * move_get_distance(m, move_time)));
+        sa->m.start_pos.y += sa->y_accel_comp * accel;
+    }
     return sa->orig_sk->calc_position_cb(sa->orig_sk, &sa->m, DUMMY_T);
 }
 
@@ -63,10 +92,38 @@ smooth_xy_calc_position(struct stepper_kinematics *sk, struct move *m
     if (x_hst) {
         double area = trapq_integrate_w(m, 'x', move_time, x_hst);
         sa->m.start_pos.x = area * sa->x_inv_smooth_sq_time;
+        if (sa->x_accel_comp) {
+            double start_time = move_time - x_hst;
+            struct move *sm = trapq_find_move(m, &start_time);
+            double end_time = move_time + x_hst;
+            struct move *em = trapq_find_move(m, &end_time);
+            double accel = sa->x_inv_smooth_sq_time * (
+                    (em->start_pos.x
+                     + em->axes_r.x * move_get_distance(em, end_time))
+                    + (sm->start_pos.x
+                        + sm->axes_r.x * move_get_distance(sm, start_time))
+                    - 2. * (m->start_pos.x
+                        + m->axes_r.x * move_get_distance(m, move_time)));
+            sa->m.start_pos.x += sa->x_accel_comp * accel;
+        }
     }
     if (y_hst) {
         double area = trapq_integrate_w(m, 'y', move_time, y_hst);
         sa->m.start_pos.y = area * sa->y_inv_smooth_sq_time;
+        if (sa->y_accel_comp) {
+            double start_time = move_time - y_hst;
+            struct move *sm = trapq_find_move(m, &start_time);
+            double end_time = move_time + y_hst;
+            struct move *em = trapq_find_move(m, &end_time);
+            double accel = sa->y_inv_smooth_sq_time * (
+                    (em->start_pos.y
+                     + em->axes_r.y * move_get_distance(em, end_time))
+                    + (sm->start_pos.y
+                        + sm->axes_r.y * move_get_distance(sm, start_time))
+                    - 2. * (m->start_pos.y
+                        + m->axes_r.y * move_get_distance(m, move_time)));
+            sa->m.start_pos.y += sa->y_accel_comp * accel;
+        }
     }
     return sa->orig_sk->calc_position_cb(sa->orig_sk, &sa->m, DUMMY_T);
 }
@@ -89,6 +146,15 @@ smooth_axis_set_time(struct stepper_kinematics *sk
     if (sa->sk.active_flags & AF_Y)
         hst = sa->y_half_smooth_time > hst ? sa->y_half_smooth_time : hst;
     sa->sk.scan_past = sa->sk.scan_future = hst;
+}
+
+void __visible
+smooth_axis_set_accel_comp(struct stepper_kinematics *sk
+                           , double accel_comp_x, double accel_comp_y)
+{
+    struct smooth_axis *sa = container_of(sk, struct smooth_axis, sk);
+    sa->x_accel_comp = accel_comp_x;
+    sa->y_accel_comp = accel_comp_y;
 }
 
 int __visible

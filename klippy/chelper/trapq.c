@@ -96,6 +96,15 @@ integrate_accel(struct move *m, double start, double end)
     return ei - si;
 }
 
+static double
+integrate_accel_t(struct move *m, double start, double end)
+{
+    double third_v = (1./3.) * m->start_v, eighth_a = .25 * m->half_accel;
+    double si = start * start * start * (third_v + eighth_a * start);
+    double ei = end * end * end * (third_v + eighth_a * end);
+    return ei - si;
+}
+
 // Calculate the definitive integral on part of a move
 static double
 move_integrate(struct move *m, int axis, double start, double end)
@@ -107,6 +116,22 @@ move_integrate(struct move *m, int axis, double start, double end)
     double base = m->start_pos.axis[axis - 'x'] * (end - start);
     double integral = integrate_accel(m, start, end);
     return base + integral * m->axes_r.axis[axis - 'x'];
+}
+
+// Calculate the definitive integral with weight on part of a move
+static double
+move_integrate_t(struct move *m, int axis, double start, double end
+                 , double offset)
+{
+    if (start < 0.)
+        start = 0.;
+    if (end > m->move_t)
+        end = m->move_t;
+    double base = .5 * m->start_pos.axis[axis - 'x']
+        * (end * end - start * start);
+    double integral = integrate_accel_t(m, start, end);
+    double offset_integral = offset * move_integrate(m, axis, start, end);
+    return offset_integral + base + integral * m->axes_r.axis[axis - 'x'];
 }
 
 // Calculate the definitive integral for a cartesian axis
@@ -126,6 +151,36 @@ trapq_integrate(struct move *m, int axis, double start, double end)
         end -= m->move_t;
         m = list_next_entry(m, node);
         res += move_integrate(m, axis, 0., end);
+    }
+    return res;
+}
+
+double
+trapq_integrate_w(struct move *m, int axis, double mid, double hst)
+{
+    double start = mid - hst;
+    double end = mid + hst;
+    double offset = -mid;
+    double res = hst * move_integrate(m, axis, start, end)
+        - move_integrate_t(m, axis, mid, end, offset)
+        + move_integrate_t(m, axis, start, mid, offset);
+    // Integrate over previous moves
+    struct move *prev = m;
+    while (unlikely(start < 0.)) {
+        prev = list_prev_entry(prev, node);
+        start += prev->move_t;
+        offset -= prev->move_t;
+        res += hst * move_integrate(prev, axis, start, prev->move_t)
+            + move_integrate_t(prev, axis, start, prev->move_t, offset);
+    }
+    // Integrate over future moves
+    offset = -mid;
+    while (unlikely(end > m->move_t)) {
+        end -= m->move_t;
+        offset += m->move_t;
+        m = list_next_entry(m, node);
+        res += hst * move_integrate(m, axis, 0., end)
+            - move_integrate_t(m, axis, 0., end, offset);
     }
     return res;
 }

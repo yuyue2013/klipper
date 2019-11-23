@@ -75,7 +75,8 @@ class Move:
         prev_move_centripetal_v2 = (.5 * prev_move.move_d * tan_theta_d2
                                     * prev_move.accel)
         self.max_start_v2 = min(
-            R * self.accel, R * prev_move.accel,
+            self.toolhead.calc_junction_max_v2(
+                prev_move, self, sin_theta_d2, tan_theta_d2),
             move_centripetal_v2, prev_move_centripetal_v2,
             extruder_v2, self.max_cruise_v2, prev_move.max_cruise_v2,
             prev_move.max_start_v2 + prev_move.delta_v2)
@@ -517,6 +518,9 @@ class ToolHead:
         self.junction_deviation = scv2 * (math.sqrt(2.) - 1.) / self.max_accel
         self.max_accel_to_decel = min(self.requested_accel_to_decel,
                                       self.max_accel)
+    def calc_junction_max_v2(self, prev_move, move, sin_theta_d2, unused_tan):
+        R = (self.junction_deviation * sin_theta_d2 / (1. - sin_theta_d2))
+        return min(R * move.accel, R * prev_move.accel)
     cmd_SET_VELOCITY_LIMIT_help = "Set printer velocity limits"
     def cmd_SET_VELOCITY_LIMIT(self, params):
         print_time = self.get_last_move_time()

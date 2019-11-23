@@ -10,13 +10,13 @@
 #include "compiler.h" // __visible
 #include "itersolve.h" // struct stepper_kinematics
 #include "pyhelper.h" // errorf
-#include "trapq.h" // trapq_integrate
+#include "trapq.h" // trapq_integrate_w
 
 struct smooth_axis {
     struct stepper_kinematics sk;
     struct stepper_kinematics *orig_sk;
-    double x_half_smooth_time, x_inv_smooth_time;
-    double y_half_smooth_time, y_inv_smooth_time;
+    double x_half_smooth_time, x_inv_smooth_sq_time;
+    double y_half_smooth_time, y_inv_smooth_sq_time;
     struct move m;
 };
 
@@ -31,8 +31,8 @@ smooth_x_calc_position(struct stepper_kinematics *sk, struct move *m
     if (!hst)
         return sa->orig_sk->calc_position_cb(sa->orig_sk, m, move_time);
     // Calculate average position over smooth_time window
-    double area = trapq_integrate(m, 'x', move_time - hst, move_time + hst);
-    sa->m.start_pos.x = area * sa->x_inv_smooth_time;
+    double area = trapq_integrate_w(m, 'x', move_time, hst);
+    sa->m.start_pos.x = area * sa->x_inv_smooth_sq_time;
     return sa->orig_sk->calc_position_cb(sa->orig_sk, &sa->m, DUMMY_T);
 }
 
@@ -45,8 +45,8 @@ smooth_y_calc_position(struct stepper_kinematics *sk, struct move *m
     if (!hst)
         return sa->orig_sk->calc_position_cb(sa->orig_sk, m, move_time);
     // Calculate average position over smooth_time window
-    double area = trapq_integrate(m, 'y', move_time - hst, move_time + hst);
-    sa->m.start_pos.y = area * sa->y_inv_smooth_time;
+    double area = trapq_integrate_w(m, 'y', move_time, hst);
+    sa->m.start_pos.y = area * sa->y_inv_smooth_sq_time;
     return sa->orig_sk->calc_position_cb(sa->orig_sk, &sa->m, DUMMY_T);
 }
 
@@ -61,12 +61,12 @@ smooth_xy_calc_position(struct stepper_kinematics *sk, struct move *m
         return sa->orig_sk->calc_position_cb(sa->orig_sk, m, move_time);
     sa->m.start_pos = move_get_coord(m, move_time);
     if (x_hst) {
-        double area = trapq_integrate(m, 'x', move_time-x_hst, move_time+x_hst);
-        sa->m.start_pos.x = area * sa->x_inv_smooth_time;
+        double area = trapq_integrate_w(m, 'x', move_time, x_hst);
+        sa->m.start_pos.x = area * sa->x_inv_smooth_sq_time;
     }
     if (y_hst) {
-        double area = trapq_integrate(m, 'y', move_time-y_hst, move_time+y_hst);
-        sa->m.start_pos.y = area * sa->y_inv_smooth_time;
+        double area = trapq_integrate_w(m, 'y', move_time, y_hst);
+        sa->m.start_pos.y = area * sa->y_inv_smooth_sq_time;
     }
     return sa->orig_sk->calc_position_cb(sa->orig_sk, &sa->m, DUMMY_T);
 }
@@ -77,9 +77,11 @@ smooth_axis_set_time(struct stepper_kinematics *sk
 {
     struct smooth_axis *sa = container_of(sk, struct smooth_axis, sk);
     sa->x_half_smooth_time = .5 * smooth_x;
-    sa->x_inv_smooth_time = 1. / smooth_x;
+    sa->x_inv_smooth_sq_time = 1. / (
+            sa->x_half_smooth_time * sa->x_half_smooth_time);
     sa->y_half_smooth_time = .5 * smooth_y;
-    sa->y_inv_smooth_time = 1. / smooth_y;
+    sa->y_inv_smooth_sq_time = 1. / (
+            sa->y_half_smooth_time * sa->y_half_smooth_time);
 
     double hst = 0.;
     if (sa->sk.active_flags & AF_X)

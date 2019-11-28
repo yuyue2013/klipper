@@ -7,7 +7,8 @@ import logging, math, types
 import chelper
 
 def calc_smooth_t(toolhead):
-    return math.sqrt(8.) * toolhead.square_corner_velocity / toolhead.max_accel
+    return (4. * (math.sqrt(2.) + 1.)
+            * toolhead.square_corner_velocity / toolhead.max_accel)
 
 MAX_ACCEL_COMPENSATION = 0.005
 
@@ -59,7 +60,7 @@ class SmoothAxis:
         # Calculate corner_velocity changes
         def calc_junction_max_v2(toolhead, prev_move, move,
                                  sin_theta_d2, tan_theta_d2):
-            X = 0.25 * self.smooth_t * tan_theta_d2 / sin_theta_d2
+            X = 0.25 * self.smooth_t * (tan_theta_d2 / sin_theta_d2 - 1.0)
             return min(X * move.accel, X * prev_move.accel)**2
         self.toolhead.calc_junction_max_v2 = types.MethodType(
                 calc_junction_max_v2, self.toolhead)

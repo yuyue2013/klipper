@@ -25,10 +25,8 @@ static void
 scurve_fill_bezier2(struct scurve *s, double start_accel_v
                   , double effective_accel, double accel_offset_t)
 {
-    s->offset_t = accel_offset_t;
     s->c2 = .5 * effective_accel;
-    s->c1 = start_accel_v;
-    s->c0 = (-s->c2 * s->offset_t - s->c1) * s->offset_t;
+    s->c1 = start_accel_v + effective_accel * accel_offset_t;
 }
 
 // Determine the coefficients for a 4th order bezier position function
@@ -37,7 +35,6 @@ scurve_fill_bezier4(struct scurve *s, double start_accel_v
         , double effective_accel, double total_accel_t, double accel_offset_t
         , double accel_comp)
 {
-    s->offset_t = accel_offset_t;
     if (!total_accel_t)
         return;
     double inv_accel_t = 1. / total_accel_t;
@@ -47,7 +44,11 @@ scurve_fill_bezier4(struct scurve *s, double start_accel_v
     s->c3 = accel_div_accel_t;
     s->c2 = -6. * accel_div_accel_t2 * accel_comp;
     s->c1 = start_accel_v + 6. * accel_div_accel_t * accel_comp;
-    s->c0 = -scurve_eval(s, 0);
+
+    s->c1 += ((4. * s->c4 * accel_offset_t
+                + 3. * s->c3) * accel_offset_t + 2. * s->c2) * accel_offset_t;
+    s->c2 += (6. * s->c4 * accel_offset_t + 3. * s->c3) * accel_offset_t;
+    s->c3 += 4. * s->c4 * accel_offset_t;
 }
 
 // Determine the coefficients for a 6th order bezier position function
@@ -56,7 +57,6 @@ scurve_fill_bezier6(struct scurve *s, double start_accel_v
         , double effective_accel, double total_accel_t, double accel_offset_t
         , double accel_comp)
 {
-    s->offset_t = accel_offset_t;
     if (!total_accel_t)
         return;
     double inv_accel_t = 1. / total_accel_t;
@@ -69,7 +69,16 @@ scurve_fill_bezier6(struct scurve *s, double start_accel_v
     s->c3 = -60. * accel_div_accel_t3 * accel_comp;
     s->c2 = 30. * accel_div_accel_t2 * accel_comp;
     s->c1 = start_accel_v;
-    s->c0 = -scurve_eval(s, 0);
+
+    s->c1 += ((((6. * s->c6 * accel_offset_t + 5. * s->c5) * accel_offset_t
+                    + 4. * s->c4) * accel_offset_t
+                + 3. * s->c3) * accel_offset_t + 2. * s->c2) * accel_offset_t;
+    s->c2 += (((15. * s->c6 * accel_offset_t + 10. * s->c5) * accel_offset_t
+                + 6. * s->c4) * accel_offset_t + 3. * s->c3) * accel_offset_t;
+    s->c3 += ((20. * s->c6 * accel_offset_t
+                + 10. * s->c5) * accel_offset_t + 4. * s->c4) * accel_offset_t;
+    s->c4 += (15. * s->c6 * accel_offset_t + 5. * s->c5) * accel_offset_t;
+    s->c5 += 6. * s->c6 * accel_offset_t;
 }
 
 double scurve_get_time(struct scurve *s, double max_scurve_t, double distance)
@@ -92,17 +101,16 @@ double scurve_get_time(struct scurve *s, double max_scurve_t, double distance)
 static inline double
 scurve_antiderivative(struct scurve *s, double time)
 {
-    time += s->offset_t;
     double v = (1./7.) * s->c6;
     v = (1./6.) * s->c5 + v * time;
     v = (1./5.) * s->c4 + v * time;
     v = (1./4.) * s->c3 + v * time;
     v = (1./3.) * s->c2 + v * time;
     v = (1./2.) * s->c1 + v * time;
-    v = s->c0 + v * time;
-    return v * time;
+    return v * time * time;
 }
 
+// Integrate Bezier curve over (start; end) interval
 double
 scurve_integrate(struct scurve *s, double start, double end)
 {

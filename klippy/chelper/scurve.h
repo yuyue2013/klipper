@@ -2,22 +2,20 @@
 #define SCURVE_H
 
 struct scurve {
-    double c0, c1, c2, c3, c4, c5, c6;
-    double offset_t;
+    double c1, c2, c3, c4, c5, c6;
 };
 
 // Find the distance travel on an S-Curve
 static inline double
 scurve_eval(struct scurve *s, double time)
 {
-    time += s->offset_t;
     double v = s->c6;
     v = s->c5 + v * time;
     v = s->c4 + v * time;
     v = s->c3 + v * time;
     v = s->c2 + v * time;
     v = s->c1 + v * time;
-    return v * time + s->c0;
+    return v * time;
 }
 
 void scurve_fill(struct scurve *s, int accel_order

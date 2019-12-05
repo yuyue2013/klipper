@@ -35,7 +35,7 @@ overshoots it a bit (illustration with ringing at 40 Hz):
 
 ![Toolhead cornering](img/toolhead-cornering.png)
 
-This effect can impact the quality of the corners even at small square corner
+This effect can impact the quality of the corners even at very small corner
 velocities and increase the ringing. S-Curve acceleration has an experimental
 mode called acceleration compensation which can help to mitigate this issue to
 some degree. The approach has certain limitations:
@@ -46,7 +46,7 @@ some degree. The approach has certain limitations:
 - It is rather sensitive to tuning the compensation parameter (unlike jerk
   limit), it should preferably be within ~20% of optimal value for each axis;
 - Can compensate only acceleration along the move direction, does not handle
-  centripetal acceleration, does not help with cornering velocity;
+  centripetal acceleration;
 - Supports well only AO=6; although AO=4 is also implemented, it is not so much
   recommended.
 
@@ -118,7 +118,6 @@ S-Curve acceleration tuning
 The quality of the prints when using S-Curve acceleration depends on a
 few parameters:
 
-* [Square corner velocity](Kinematics.md#look-ahead)
 * Maximum jerk (if S-Curve is enabled)
 * Acceleration order
 * Acceleration compensation (optional)
@@ -126,7 +125,10 @@ few parameters:
 Maximum acceleration and maximum velocity do not have significant impact
 on the ringing in this mode and can be set to the values suggested by the
 printer manufacturer or the values you normally use. You do not need to
-tune these.
+tune these. It is also not advised to increase the square corner velocity above
+the default value (5 mm/s): increasing it does not significantly reduce the
+print time, and can severely amplify the ringing and degrade the quality of
+the prints.
 
 ## Tuning process
 
@@ -141,14 +143,13 @@ Prepare the [test](https://www.thingiverse.com/thing:3847206) model in the slice
 ### Ringing frequency
 
 First, measure the **ringing frequency**. For best results, this should be
-done with acceleration_order = 2, high acceleration and square_corner_velocity.
+done with acceleration_order = 2 and high acceleration.
 
 1. Start with the following command `SET_VELOCITY_LIMIT ACCEL_ORDER=2`.
 2. Print the test model sliced with suggested parameters.
 3. If the ringing is poorly visible, try increasing acceleration with
-   `SET_VELOCITY_LIMIT ACCEL=3000` or higher and
-   `SET_VELOCITY_LIMIT SQUARE_CORNER_VELOCITY=20` or higher. Basically, you
-   need to *decrease* the quality of the print.
+   `SET_VELOCITY_LIMIT ACCEL=3000` or higher. Basically, you need to *decrease*
+   the quality of the print.
 4. Measure the distance *D* (in mm) between *N* oscillations along X axis near
    the notches, preferably skipping the first oscillation or two. To measure
    the distance between oscillations more easily, mark the oscillations first,
@@ -188,25 +189,7 @@ min_jerk_limit_time: 0.02  # in sec, corresponds to 50 Hz
 ```
 and restart Klipper using `RESTART` command.
 
-You can re-print the model to check if the quality has improved, be sure to set
-`SET_VELOCITY_LIMIT SQUARE_CORNER_VELOCITY=1` before printing for now.
-
-### Square corner velocity
-
-Square corner velocity defines the velocity limit for the toolhead to traverse
-the square corners, it is also used to determine the maximum velocity between the
-moves with other angles as well. Too high values may significantly increase
-the ringing.
-
-Issue `SET_VELOCITY_LIMIT SQUARE_CORNER_VELOCITY=1` command to begin the tuning
-process. Print the test model increasing the square corner velocity every 5 mm
-by 2-5 mm/sec (e.g. `SET_VELOCITY_LIMIT SQUARE_CORNER_VELOCITY=5` and so on).
-The square corner velocity can be changed either manually by issuing G-Code
-commands, or by adding them to the generated gcode file (e.g. every 20 layers
-with 0.25 mm layer height or every 25 layers with 0.2 mm layer height).
-Notice when the ringing becomes apparent, and use the square corner velocity
-value before that. Store the value as `square_corner_velocity` parameter in
-`printer.cfg` and restart Klipper.
+You can re-print the model to check if the quality has improved.
 
 ### Pressure Advance
 
@@ -272,7 +255,6 @@ better to fine-tune this parameter to get the best results.
 Some prerequisites:
 
 - measure the ringing frequency(-ies) as described above;
-- tune the square corner velocity until you get acceptable results;
 - compute `min_jerk_limit_time` and `max_jerk` for the baseline;
 - store these parameters in the config.
 
@@ -282,9 +264,9 @@ Once it is tuned, Pressure Advance can be re-enabled, but it is better to
 [tune](Pressure_Advance.md#tuning-pressure-advance) PA value afterwards: there
 is a good chance that slightly lower PA value will be needed.
 
-Now set the desired acceleration, e.g.:
-`SET_VELOCITY_LIMIT ACCEL=5000 ACCEL_TO_DECEL=3000`. Set very high max jerk
-parameter, e.g. `SET_VELOCITY_LIMIT JERK=1000000`. Print the test model
+Now set the desired acceleration and acceleration order (6 is suggested), e.g.:
+`SET_VELOCITY_LIMIT ACCEL=5000 ACCEL_TO_DECEL=3000 ACCEL_ORDER=6`. Set very high
+max jerk parameter, e.g. `SET_VELOCITY_LIMIT JERK=1000000`. Print the test model
 increasing the acceleration compensation every 5 mm. It is a good idea to cover
 at least the range of values [0.5 / (2 π f<sub>max</sub>)<sup>2</sup>,
 1.5 / (2 π f<sub>min</sub>)<sup>2</sup>]. For example, if the printer has
@@ -305,11 +287,20 @@ compensation is unlikely to work for your printer.
 
 Notice that if the results on the previous step are not yet perfect - ringing
 is suppressed, but only partially - you can still continue to the next step.
-Now you need to tune the JERK parameter. Set the chosen acceleration
-compensation parameter, then print the test model increasing JERK parameter.
-For example, one can start with `SET_VELOCITY_LIMIT JERK=50000` and increase
-it by 50000 every 5 mm. Choose the maximum jerk value that still shows good
-quality results.
+Now you need to tune the JERK parameter.
+
+First, you want to determine the reasonable range for jerk to fine-tune later.
+Set the chosen acceleration compensation parameter, then print the test model
+increasing JERK parameter. For example, one can start with
+`SET_VELOCITY_LIMIT JERK=50000` and increase it by 50'000 every 5 mm. Choose the
+range of values 50'000 - 100'000 wide such that the min value in that range
+still shows good quality results and max value already shows some signs of
+ringing (e.g. the chosen range could be 150'000 - 250'000).
+
+Now reprint the test model fine-tuning JERK parameter. Start with the minimum
+value determined at the previous step `SET_VELOCITY_LIMIT JERK=...` and increase
+it by 10'000 every 5 mm. Choose the highest value that still shows no signs of
+ringing. Tuning process is now complete.
 
 
 S-Curve acceleration overview
@@ -442,5 +433,4 @@ S-Curve acceleration notes
    'Connect infill lines' setting in Cura can be used when slicing models
    to mitigate this issue to some degree. When these options are enabled,
    slicers will generate mostly connected lines at the top, bottom and infill,
-   preventing toolhead from stopping for most of the moves. This has the most
-   positive effect if `square_corner_velocity` is set reasonably high.
+   preventing toolhead from stopping for most of the moves.

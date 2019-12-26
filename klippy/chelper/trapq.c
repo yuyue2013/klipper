@@ -118,61 +118,6 @@ move_get_coord(struct move *m, double move_time)
         .z = m->start_pos.z + m->axes_r.z * move_dist };
 }
 
-// Calculate the definitive integral on part of a move
-static double
-move_integrate(struct move *m, int axis, double start, double end)
-{
-    if (start < 0.)
-        start = 0.;
-    if (end > m->move_t)
-        end = m->move_t;
-    double base = m->start_pos.axis[axis - 'x'] * (end - start);
-    double integral = scurve_integrate(&m->s, start, end);
-    return base + integral * m->axes_r.axis[axis - 'x'];
-}
-
-// Calculate the definitive integral for a cartesian axis
-double
-trapq_integrate(struct move *m, int axis, double start, double end)
-{
-    double res = move_integrate(m, axis, start, end);
-    // Integrate over previous moves
-    struct move *prev = m;
-    while (unlikely(start < 0.)) {
-        prev = list_prev_entry(prev, node);
-        start += prev->move_t;
-        res += move_integrate(prev, axis, start, prev->move_t);
-    }
-    // Integrate over future moves
-    while (unlikely(end > m->move_t)) {
-        end -= m->move_t;
-        m = list_next_entry(m, node);
-        res += move_integrate(m, axis, 0., end);
-    }
-    return res;
-}
-
-// Find a move associated with a given time
-struct move *
-trapq_find_move(struct move *m, double *ptime)
-{
-    double move_time = *ptime;
-    for (;;) {
-        if (unlikely(move_time < 0.)) {
-            // Check previous move in list
-            m = list_prev_entry(m, node);
-            move_time += m->move_t;
-        } else if (unlikely(move_time > m->move_t)) {
-            // Check next move in list
-            move_time -= m->move_t;
-            m = list_next_entry(m, node);
-        } else {
-            *ptime = move_time;
-            return m;
-        }
-    }
-}
-
 #define NEVER_TIME 9999999999999999.9
 
 // Allocate a new 'trapq' object

@@ -10,11 +10,49 @@
 #include "compiler.h" // __visible
 #include "itersolve.h" // struct stepper_kinematics
 #include "pyhelper.h" // errorf
+#include "scurve.h" // scurve_eval, scurve_integrate
 #include "trapq.h" // move_get_distance
+
+// Calculate the definitive integral of extruder with pressure advance
+static double
+pa_move_integrate(struct move *m, double start, double end)
+{
+    if (start < 0.)
+        start = 0.;
+    if (end > m->move_t)
+        end = m->move_t;
+    double pressure_advance = m->axes_r.y;
+    double pa_add = pressure_advance * (
+            scurve_eval(&m->s, end) - scurve_eval(&m->s, start));
+    double base = m->start_pos.x * (end - start);
+    double integral = scurve_integrate(&m->s, start, end);
+    return base + integral + pa_add;
+}
+
+// Calculate the definitive integral of the extruder over a range of moves
+static double
+pa_range_integrate(struct move *m, double start, double end)
+{
+    double res = pa_move_integrate(m, start, end);
+    // Integrate over previous moves
+    struct move *prev = m;
+    while (unlikely(start < 0.)) {
+        prev = list_prev_entry(prev, node);
+        start += prev->move_t;
+        res += pa_move_integrate(prev, start, prev->move_t);
+    }
+    // Integrate over future moves
+    while (unlikely(end > m->move_t)) {
+        end -= m->move_t;
+        m = list_next_entry(m, node);
+        res += pa_move_integrate(m, 0., end);
+    }
+    return res;
+}
 
 struct extruder_stepper {
     struct stepper_kinematics sk;
-    double pressure_advance_factor, half_smooth_time, inv_smooth_time;
+    double half_smooth_time, inv_smooth_time;
 };
 
 static double
@@ -26,36 +64,21 @@ extruder_calc_position(struct stepper_kinematics *sk, struct move *m
     if (!hst)
         // Pressure advance not enabled
         return m->start_pos.x + move_get_distance(m, move_time);
-    // Calculate average position over smooth_time
-    double area = trapq_integrate(m, 'x', move_time - hst, move_time + hst);
-    double base_pos = area * es->inv_smooth_time;
-    // Calculate position 'half_smooth_time' in the past
-    double start_time = move_time - hst;
-    struct move *sm = trapq_find_move(m, &start_time);
-    double start_dist = move_get_distance(sm, start_time);
-    double pa_start_pos = sm->start_pos.y + (sm->axes_r.y ? start_dist : 0.);
-    // Calculate position 'half_smooth_time' in the future
-    double end_time = move_time + hst;
-    struct move *em = trapq_find_move(m, &end_time);
-    double end_dist = move_get_distance(em, end_time);
-    double pa_end_pos = em->start_pos.y + (em->axes_r.y ? end_dist : 0.);
-    // Calculate position with pressure advance
-    return base_pos + (pa_end_pos - pa_start_pos) * es->pressure_advance_factor;
+    // Apply pressure advance and average over smooth_time
+    double area = pa_range_integrate(m, move_time - hst, move_time + hst);
+    return area * es->inv_smooth_time;
 }
 
 void __visible
-extruder_set_pressure(struct stepper_kinematics *sk
-                      , double pressure_advance, double half_smooth_time)
+extruder_set_smooth_time(struct stepper_kinematics *sk, double smooth_time)
 {
     struct extruder_stepper *es = container_of(sk, struct extruder_stepper, sk);
-    if (! half_smooth_time) {
-        es->pressure_advance_factor = es->half_smooth_time = 0.;
+    double hst = smooth_time * .5;
+    es->half_smooth_time = hst;
+    es->sk.gen_steps_pre_active = es->sk.gen_steps_post_active = hst;
+    if (! hst)
         return;
-    }
-    es->sk.scan_past = es->sk.scan_future = half_smooth_time;
-    es->half_smooth_time = half_smooth_time;
-    es->inv_smooth_time = .5 / half_smooth_time;
-    es->pressure_advance_factor = pressure_advance * es->inv_smooth_time;
+    es->inv_smooth_time = 1. / smooth_time;
 }
 
 struct stepper_kinematics * __visible
@@ -70,9 +93,8 @@ extruder_stepper_alloc(void)
 
 // Populate a 'struct move' with an extruder velocity trapezoid
 void __visible
-extruder_add_move(struct trapq *tq, double print_time
-                  , double start_e_pos, double extrude_pa_pos
-                  , double extrude_r, double is_pa
+extruder_add_move(struct trapq *tq, double print_time, double start_e_pos
+                  , double extrude_r, double pressure_advance
                   , const struct trap_accel_decel *accel_decel)
 {
     // NB: acceleration compensation reduces duration of moves in the beginning
@@ -103,6 +125,6 @@ extruder_add_move(struct trapq *tq, double print_time
 
     // Queue movement (x is extruder movement, y is movement with pa)
     trapq_append(tq, print_time,
-                 start_e_pos, extrude_pa_pos, 0.,
-                 1., is_pa, 0., &new_accel_decel);
+                 start_e_pos, 0., 0.,
+                 1., pressure_advance, 0., &new_accel_decel);
 }

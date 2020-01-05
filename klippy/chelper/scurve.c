@@ -117,6 +117,26 @@ scurve_integrate(struct scurve *s, double start, double end)
     return scurve_antiderivative(s, end) - scurve_antiderivative(s, start);
 }
 
+static inline double
+scurve_2nd_antiderivative(struct scurve *s, double time)
+{
+    double v = (1./8.) * s->c6;
+    v = (1./7.) * s->c5 + v * time;
+    v = (1./6.) * s->c4 + v * time;
+    v = (1./5.) * s->c3 + v * time;
+    v = (1./4.) * s->c2 + v * time;
+    v = (1./3.) * s->c1 + v * time;
+    return v * time * time * time;
+}
+
+// Integrate Bezier curve times t over (start; end) interval
+double
+scurve_integrate_t(struct scurve *s, double start, double end)
+{
+    return scurve_2nd_antiderivative(s, end)
+        - scurve_2nd_antiderivative(s, start);
+}
+
 void
 scurve_fill(struct scurve *s, int accel_order
             , double accel_t, double accel_offset_t, double total_accel_t

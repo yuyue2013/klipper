@@ -15,15 +15,16 @@ COMPILE_CMD = ("gcc -Wall -g -O2 -shared -fPIC"
                " -flto -fwhole-program -fno-use-linker-plugin"
                " -o %s %s")
 SOURCE_FILES = [
-    'pyhelper.c', 'serialqueue.c', 'stepcompress.c', 'itersolve.c',
-    'moveq.c', 'trapq.c', 'scurve.c',
+    'pyhelper.c', 'serialqueue.c', 'stepcompress.c', 'itersolve.c', 'trapq.c',
+    'accelcombine.c', 'accelgroup.c', 'moveq.c', 'scurve.c', 'trapbuild.c',
     'kin_cartesian.c', 'kin_corexy.c', 'kin_delta.c', 'kin_polar.c',
     'kin_winch.c', 'kin_extruder.c',
 ]
 DEST_LIB = "c_helper.so"
 OTHER_FILES = [
-    'list.h', 'serialqueue.h', 'stepcompress.h', 'itersolve.h', 'moveq.h',
-    'pyhelper.h', 'trapq.h', 'scurve.h',
+    'list.h', 'serialqueue.h', 'stepcompress.h', 'itersolve.h', 'trapq.h',
+    'accelcombine.h', 'accelgroup.h', 'moveq.h', 'scurve.h', 'trapbuild.h',
+    'pyhelper.h',
 ]
 
 defs_stepcompress = """

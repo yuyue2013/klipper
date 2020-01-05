@@ -1,19 +1,35 @@
 #ifndef MOVEQ_H
 #define MOVEQ_H
 
+#include "accelcombine.h"
+#include "accelgroup.h"
 #include "itersolve.h"
 #include "list.h"
 
 #define ERROR_RET -1
 
-struct qmove;
 struct trap_accel_decel;
+
+struct qmove {
+    struct list_node node;
+
+    double cruise_v;
+    double move_d;
+    double accel_comp;
+
+    struct accel_group accel_group, decel_group, default_accel;
+    struct accel_group safe_decel;
+    double smooth_delta_v2, max_smoothed_v2;
+    double max_cruise_v2, junction_max_v2;
+
+    // Only used to track smootheness, can be deleted
+    double start_v, end_v;
+};
 
 struct moveq {
     double prev_end_v2;
     struct list_head moves;
-    struct list_head junctions;
-    double junct_start_v2;
+    struct accel_combiner accel_combiner;
     struct qmove *smoothed_pass_limit;
     double prev_move_end_v;
 };

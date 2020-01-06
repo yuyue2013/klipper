@@ -10,17 +10,8 @@
 #include "compiler.h" // __visible
 #include "itersolve.h" // struct stepper_kinematics
 #include "pyhelper.h" // errorf
+#include "scurve.h" // scurve_eval, scurve_integrate
 #include "trapq.h" // move_get_distance
-
-// Calculate the definitive integral of the move distance
-static double
-move_integrate_distance(struct move *m, double start, double end)
-{
-    double half_v = .5 * m->start_v, sixth_a = (1. / 3.) * m->half_accel;
-    double si = start * start * (half_v + sixth_a * start);
-    double ei = end * end * (half_v + sixth_a * end);
-    return ei - si;
-}
 
 // Calculate the definitive integral of extruder with pressure advance
 static double
@@ -31,10 +22,11 @@ pa_move_integrate(struct move *m, double start, double end)
     if (end > m->move_t)
         end = m->move_t;
     double pressure_advance = m->axes_r.y;
-    double avg_v = m->start_v + (start + end) * m->half_accel;
-    double pa_add = pressure_advance * avg_v;
-    double base = (m->start_pos.x + pa_add) * (end - start);
-    return base + move_integrate_distance(m, start, end);
+    double pa_add = pressure_advance * (
+            scurve_eval(&m->s, end) - scurve_eval(&m->s, start));
+    double base = m->start_pos.x * (end - start);
+    double integral = scurve_integrate(&m->s, start, end);
+    return base + integral + pa_add;
 }
 
 // Calculate the definitive integral of the extruder over a range of moves
@@ -101,9 +93,8 @@ extruder_stepper_alloc(void)
 
 // Populate a 'struct move' with an extruder velocity trapezoid
 void __visible
-extruder_add_move(struct trapq *tq, double print_time
-                  , double start_e_pos, double extrude_pa_pos
-                  , double extrude_r, double is_pa
+extruder_add_move(struct trapq *tq, double print_time, double start_e_pos
+                  , double extrude_r, double pressure_advance
                   , const struct trap_accel_decel *accel_decel)
 {
     // NB: acceleration compensation reduces duration of moves in the beginning
@@ -134,6 +125,6 @@ extruder_add_move(struct trapq *tq, double print_time
 
     // Queue movement (x is extruder movement, y is movement with pa)
     trapq_append(tq, print_time,
-                 start_e_pos, extrude_pa_pos, 0.,
-                 1., is_pa, 0., &new_accel_decel);
+                 start_e_pos, 0., 0.,
+                 1., pressure_advance, 0., &new_accel_decel);
 }

@@ -111,8 +111,7 @@ defs_kin_extruder = """
     void extruder_set_smooth_time(struct stepper_kinematics *sk
         , double smooth_time);
     void extruder_add_move(struct trapq *tq, double print_time
-        , double start_e_pos, double extrude_pa_pos
-        , double extrude_r, double is_pa
+        , double start_e_pos, double extrude_r, double pressure_advance
         , const struct trap_accel_decel *accel_decel);
 """
 

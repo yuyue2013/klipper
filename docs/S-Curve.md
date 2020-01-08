@@ -87,7 +87,7 @@ will most likely list
 Check out the new branch:
 ```
 $ git fetch s-curve-exp
-$ git checkout s-curve-exp/scurve-c-combine-smoothpa
+$ git checkout s-curve-exp/scurve-c-combine-smoothing
 ```
 
 Add `acceleration_order` paramter to your `printer.cfg`

@@ -26,6 +26,7 @@ class Move:
         self.jerk = toolhead.max_jerk
         self.min_jerk_limit_time = toolhead.min_jerk_limit_time
         self.accel_compensation = toolhead.accel_compensation
+        self.timing_callbacks = []
         self.is_kinematic_move = True
         self.axes_d = axes_d = [end_pos[i] - start_pos[i] for i in (0, 1, 2, 3)]
         self.move_d = move_d = math.sqrt(sum([d*d for d in axes_d[:3]]))
@@ -104,6 +105,10 @@ class MoveQueue:
         self.junction_flush = LOOKAHEAD_FLUSH_TIME
     def set_flush_time(self, flush_time):
         self.junction_flush = flush_time
+    def get_last(self):
+        if self.queue:
+            return self.queue[-1]
+        return None
     def flush(self, lazy=False):
         self.junction_flush = LOOKAHEAD_FLUSH_TIME
         queue = self.queue
@@ -297,6 +302,8 @@ class ToolHead:
                 # takes care of by adjusting next_move_time accordingly.
                 self.extruder.move(next_move_time, move, self.ctrap_accel_decel)
             next_move_time += total_move_t
+            for cb in move.timing_callbacks:
+                cb(next_move_time)
         # Generate steps for moves
         if self.special_queuing_state:
             self._update_drip_move_time(next_move_time)
@@ -493,6 +500,12 @@ class ToolHead:
             self.kin_flush_times.append(delay)
         new_delay = max(self.kin_flush_times + [0.])
         self.kin_flush_delay = new_delay
+    def register_lookahead_callback(self, callback):
+        last_move = self.move_queue.get_last()
+        if last_move is None:
+            callback(self.get_last_move_time())
+            return
+        last_move.timing_callbacks.append(callback)
     def note_kinematic_activity(self, kin_time):
         self.last_kin_move_time = max(self.last_kin_move_time, kin_time)
     def get_max_velocity(self):

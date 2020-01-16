@@ -98,43 +98,123 @@ double scurve_get_time(struct scurve *s, double max_scurve_t, double distance)
     return (high + low) * .5;
 }
 
-static inline double
-scurve_antiderivative(struct scurve *s, double time)
+// Compute Bezier curve difference between end and start: s(end) - s(start)
+double
+scurve_diff(struct scurve *s, double start, double end)
 {
-    double v = (1./7.) * s->c6;
-    v = (1./6.) * s->c5 + v * time;
-    v = (1./5.) * s->c4 + v * time;
-    v = (1./4.) * s->c3 + v * time;
-    v = (1./3.) * s->c2 + v * time;
-    v = (1./2.) * s->c1 + v * time;
-    return v * time * time;
+    double mid = (start + end) * 0.5;
+    double h = end - start;
+    double h2 = h * h;
+
+    double a6 = s->c6;
+    double a5 = s->c5;
+    double a4 = s->c4;
+    double a3 = s->c3;
+    double a2 = s->c2;
+    double a1 = s->c1;
+
+    double v = 6. * a6;
+    v = 5. * a5 + v * mid;
+    a6 *= h2;
+    v = 4. * a4 + 5. * a6 + v * mid;
+    a5 *= h2;
+    v = 3. * a3 + (5./2.) * a5 + v * mid;
+    v = 2. * a2 + h2 * (a4 + (3./8.) * a6) + v * mid;
+    v = a1 + h2 * (0.25 * a3 + (1./16.) * a5) + v * mid;
+    return v * h;
 }
 
-// Integrate Bezier curve over (start; end) interval
+// Compute integral of Bezier curve derivative times t:
+// integral(s'(t) * t, t = start..end)
+double
+scurve_deriv_t_integrate(struct scurve *s, double start, double end)
+{
+    double mid = (start + end) * 0.5;
+    double h = end - start;
+    double h2 = h * h;
+
+    double a6 = s->c6;
+    double a5 = s->c5;
+    double a4 = s->c4;
+    double a3 = s->c3;
+    double a2 = s->c2;
+    double a1 = s->c1;
+
+    double v = 6. * a6;
+    v = 5. * a5 + v * mid;
+    a6 *= h2;
+    v = 4. * a4 + 7.5 * a6 + v * mid;
+    a5 *= h2;
+    v = 3. * a3 + (25./6.) * a5 + v * mid;
+    a4 *= h2;
+    a6 *= h2;
+    v = 2. * a2 + 2. * a4 + (9./8.) * a6 + v * mid;
+    v = a1 + h2 * (0.75 * a3 + (5./16.) * a5) + v * mid;
+    v = h2 * ((1./6.) * a2 + (1./20.) * a4 + (3./224.) * a6) + v * mid;
+    return v * h;
+}
+
+// Integrate Bezier curve over (start; end) interval:
+// integral(s(t), t = start..end)
 double
 scurve_integrate(struct scurve *s, double start, double end)
 {
-    return scurve_antiderivative(s, end) - scurve_antiderivative(s, start);
+    double mid = (start + end) * 0.5;
+    double h = end - start;
+    double h2 = h * h;
+
+    double a6 = s->c6;
+    double a5 = s->c5;
+    double a4 = s->c4;
+    double a3 = s->c3;
+    double a2 = s->c2;
+    double a1 = s->c1;
+
+    double v = a6;
+    v = a5 + v * mid;
+    a6 *= h2;
+    v = a4 + (5./4.) * a6 + v * mid;
+    a5 *= h2;
+    v = a3 + (5./6.) * a5 + v * mid;
+    a4 *= h2;
+    a6 *= h2;
+    v = a2 + 0.5 * a4 + (3./16.) * a6 + v * mid;
+    v = a1 + h2 * (0.25 * a3 + (1./16.) * a5) + v * mid;
+    v = h2 * ((1./12.) * a2 + (1./80.) * a4 + (1./448.) * a6) + v * mid;
+    return v * h;
 }
 
-static inline double
-scurve_2nd_antiderivative(struct scurve *s, double time)
-{
-    double v = (1./8.) * s->c6;
-    v = (1./7.) * s->c5 + v * time;
-    v = (1./6.) * s->c4 + v * time;
-    v = (1./5.) * s->c3 + v * time;
-    v = (1./4.) * s->c2 + v * time;
-    v = (1./3.) * s->c1 + v * time;
-    return v * time * time * time;
-}
-
-// Integrate Bezier curve times t over (start; end) interval
+// Integrate Bezier curve times t over (start; end) interval:
+// integral(s(t) * t, t = start..end)
 double
 scurve_integrate_t(struct scurve *s, double start, double end)
 {
-    return scurve_2nd_antiderivative(s, end)
-        - scurve_2nd_antiderivative(s, start);
+    double mid = (start + end) * 0.5;
+    double h = end - start;
+    double h2 = h * h;
+
+    double a6 = s->c6;
+    double a5 = s->c5;
+    double a4 = s->c4;
+    double a3 = s->c3;
+    double a2 = s->c2;
+    double a1 = s->c1;
+
+    double v = a6;
+    v = a5 + v * mid;
+    a6 *= h2;
+    v = a4 + (7./4.) * a6 + v * mid;
+    a5 *= h2;
+    v = a3 + (5./4.) * a5 + v * mid;
+    a4 *= h2;
+    a6 *= h2;
+    v = a2 + (5./6.) * a4 + (7./16.) * a6 + v * mid;
+    a3 *= h2;
+    a5 *= h2;
+    v = a1 + 0.5 * a3 + (3./16.) * a5 + v * mid;
+    v = h2 * (0.25 * a2 + (1./16.) * a4 + (1./64.) * a6) + v * mid;
+    v = h2 * ((1./12.) * a1 + (1./80.) * a3 + (1./448.) * a5) + v * mid;
+    return v * h;
 }
 
 void

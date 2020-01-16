@@ -33,8 +33,7 @@ extruder_integrate(struct move *m, double start, double end)
 {
     // Calculate base position and velocity with pressure advance
     double pressure_advance = m->axes_r.y;
-    double pa_add = pressure_advance * (
-            scurve_eval(&m->s, end) - scurve_eval(&m->s, start));
+    double pa_add = pressure_advance * scurve_diff(&m->s, start, end);
     double base = m->start_pos.x * (end - start);
     double integral = scurve_integrate(&m->s, start, end);
     return base + integral + pa_add;
@@ -47,9 +46,8 @@ extruder_integrate_time(struct move *m, double start, double end)
 {
     // Calculate base position and velocity with pressure advance
     double pressure_advance = m->axes_r.y;
-    double pa_add = pressure_advance * (scurve_eval(&m->s, end) * end
-            - scurve_eval(&m->s, start) * start
-            - scurve_integrate(&m->s, start, end));
+    double pa_add = pressure_advance
+        * scurve_deriv_t_integrate(&m->s, start, end);
     double base = .5 * m->start_pos.x * (end * end - start * start);
     double integral = scurve_integrate_t(&m->s, start, end);
     return base + integral + pa_add;

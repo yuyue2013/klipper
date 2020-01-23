@@ -181,8 +181,7 @@ class ToolHead:
         self.config_max_accel = self.max_accel
         self.config_square_corner_velocity = self.square_corner_velocity
         self.junction_deviation = 0.
-        self.accel_compensation = config.getfloat(
-            'accel_compensation', 0., minval=0., maxval=MAX_ACCEL_COMPENSATION)
+        self.accel_compensation = 0.
         self._calc_junction_deviation()
         # Print time tracking
         self.buffer_time_low = config.getfloat(
@@ -527,20 +526,16 @@ class ToolHead:
             raise gcode.error(
                     "ACCEL_ORDER = %s is not a valid choice" % (accel_order,))
         self.accel_order = accel_order
-        self.accel_compensation = gcode.get_float(
-            'ACCEL_COMPENSATION', params, self.accel_compensation, minval=0.
-            , maxval=MAX_ACCEL_COMPENSATION)
+        self.accel_compensation = 0.
         self.max_velocity = min(max_velocity, self.config_max_velocity)
         self.max_accel = min(max_accel, self.config_max_accel)
         self.square_corner_velocity = min(square_corner_velocity,
                                           self.config_square_corner_velocity)
         self._calc_junction_deviation()
         msg = ("max_velocity: %.6f max_accel: %.6f max_accel_to_decel: %.6f\n"
-               "max_jerk: %.6f accel_order: %d square_corner_velocity: %.6f\n"
-               "accel_compensation: %.8f\n"% (
+               "max_jerk: %.6f accel_order: %d square_corner_velocity: %.6f\n"%(
                    self.max_velocity, self.max_accel, self.max_accel_to_decel,
-                   self.max_jerk, accel_order, self.square_corner_velocity,
-                   self.accel_compensation))
+                   self.max_jerk, accel_order, self.square_corner_velocity))
         self.printer.set_rollover_info("toolhead", "toolhead: %s" % (msg,))
         gcode.respond_info(msg, log=False)
     def cmd_M204(self, params):

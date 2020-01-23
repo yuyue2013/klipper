@@ -68,14 +68,27 @@ class SmoothAxis:
     cmd_SET_SMOOTH_AXIS_help = "Set cartesian time smoothing parameters"
     def cmd_SET_SMOOTH_AXIS(self, params):
         gcode = self.printer.lookup_object('gcode')
-        accel_comp_x = gcode.get_float('ACCEL_COMP_X', params, self.accel_comp_x,
-                                   minval=0., maxval=MAX_ACCEL_COMPENSATION)
-        accel_comp_y = gcode.get_float('ACCEL_COMP_Y', params, self.accel_comp_y,
-                                   minval=0., maxval=MAX_ACCEL_COMPENSATION)
-        smooth_x = gcode.get_float('SMOOTH_X', params, self.smooth_x,
-                                   minval=0., maxval=.200)
-        smooth_y = gcode.get_float('SMOOTH_Y', params, self.smooth_y,
-                                   minval=0., maxval=.200)
+        accel_comp_xy = gcode.get_float(
+                'ACCEL_COMP_XY', params, -1.0,
+                minval=-1.0, maxval=MAX_ACCEL_COMPENSATION)
+        if accel_comp_xy < 0:
+            accel_comp_x = gcode.get_float(
+                    'ACCEL_COMP_X', params, self.accel_comp_x,
+                    minval=0., maxval=MAX_ACCEL_COMPENSATION)
+            accel_comp_y = gcode.get_float(
+                    'ACCEL_COMP_Y', params, self.accel_comp_y,
+                    minval=0., maxval=MAX_ACCEL_COMPENSATION)
+        else:
+            accel_comp_x = accel_comp_y = accel_comp_xy
+        smooth_xy = gcode.get_float('SMOOTH_XY', params, -1.0,
+                                    minval=-1.0, maxval=.200)
+        if smooth_xy < 0:
+            smooth_x = gcode.get_float('SMOOTH_X', params, self.smooth_x,
+                                       minval=0., maxval=.200)
+            smooth_y = gcode.get_float('SMOOTH_Y', params, self.smooth_y,
+                                       minval=0., maxval=.200)
+        else:
+            smooth_x = smooth_y = smooth_xy
         self._set_smoothing(accel_comp_x, accel_comp_y, smooth_x, smooth_y)
         gcode.respond_info("accel_comp_x:%.9f accel_comp_y:%.9f "
                            "smooth_x:%.6f smooth_y:%.6f" % (

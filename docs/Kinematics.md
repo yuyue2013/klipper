@@ -294,7 +294,7 @@ continue to move after the nominal end of the last extrusion move.
 Key formula for "smoothed pressure advance":
 ```
 smooth_pa_position(t) =
-    ( definitive_integral(pa_position(x) * abs(t - x) * dx,
+    ( definitive_integral(pa_position(x) * (smooth_time/2 - abs(t - x)) * dx,
                           from=t-smooth_time/2, to=t+smooth_time/2)
      / (smooth_time/2)^2 )
 ```

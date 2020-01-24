@@ -13,7 +13,21 @@
 #include "scurve.h" // scurve_eval, scurve_integrate
 #include "trapq.h" // move_get_distance
 
-// Calculate the definitive integral of extruder position
+// Without pressure advance, the extruder stepper position is:
+//     extruder_position(t) = nominal_position(t)
+// When pressure advance is enabled, additional filament is pushed
+// into the extruder during acceleration (and retracted during
+// deceleration). The formula is:
+//     pa_position(t) = (nominal_position(t)
+//                       + pressure_advance * nominal_velocity(t))
+// Which is then "smoothed" using a weighted average:
+//     smooth_position(t) = (
+//         definitive_integral(pa_position(x) * (smooth_time/2 - abs(t-x)) * dx,
+//                             from=t-smooth_time/2, to=t+smooth_time/2)
+//         / ((smooth_time/2)**2))
+
+// Calculate the definitive integral of the motion formula:
+//   position(t) = base + s(t) + pa * s'(t), with s(t) - Bezier S-Curve
 static double
 extruder_integrate(struct move *m, double start, double end)
 {
@@ -25,7 +39,8 @@ extruder_integrate(struct move *m, double start, double end)
     return base + integral + pa_add;
 }
 
-// Calculate the definitive integral of time weighted extruder position
+// Calculate the definitive integral of time weighted position:
+//   weighted_position(t) = t * (base + s(t) + pa * s'(t))
 static double
 extruder_integrate_time(struct move *m, double start, double end)
 {
@@ -46,9 +61,9 @@ pa_move_integrate(struct move *m, double start, double end, double time_offset)
         start = 0.;
     if (end > m->move_t)
         end = m->move_t;
-    double iextruder = extruder_integrate(m, start, end);
-    double wgt_iextruder = extruder_integrate_time(m, start, end);
-    return wgt_iextruder - time_offset * iextruder;
+    double iext = extruder_integrate(m, start, end);
+    double wgt_ext = extruder_integrate_time(m, start, end);
+    return wgt_ext - time_offset * iext;
 }
 
 // Calculate the definitive integral of the extruder over a range of moves

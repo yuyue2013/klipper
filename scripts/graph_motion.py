@@ -7,7 +7,7 @@
 import optparse, datetime
 import matplotlib
 
-SEG_TIME = .000100
+SEG_TIME = .000020
 INV_SEG_TIME = 1. / SEG_TIME
 
 
@@ -24,23 +24,51 @@ Moves = [
 ]
 ACCEL = 3000.
 
+def get_acc_pos_ao2(rel_t, start_v, accel, move_t):
+    return (start_v + 0.5 * accel * rel_t) * rel_t
+
+def get_acc_pos_ao4(rel_t, start_v, accel, move_t):
+    inv_accel_t = 1. / move_t
+    accel_div_accel_t = accel * inv_accel_t
+    accel_div_accel_t2 = accel_div_accel_t * inv_accel_t
+
+    c4 = -.5 * accel_div_accel_t2;
+    c3 = accel_div_accel_t;
+    c1 = start_v
+    return ((c4 * rel_t + c3) * rel_t * rel_t + c1) * rel_t
+
+def get_acc_pos_ao6(rel_t, start_v, accel, move_t):
+    inv_accel_t = 1. / move_t
+    accel_div_accel_t = accel * inv_accel_t
+    accel_div_accel_t2 = accel_div_accel_t * inv_accel_t
+    accel_div_accel_t3 = accel_div_accel_t2 * inv_accel_t
+    accel_div_accel_t4 = accel_div_accel_t3 * inv_accel_t
+
+    c6 = accel_div_accel_t4;
+    c5 = -3. * accel_div_accel_t3;
+    c4 = 2.5 * accel_div_accel_t2;
+    c1 = start_v;
+    return (((c6 * rel_t + c5) * rel_t + c4) * rel_t * rel_t * rel_t + c1) * rel_t
+
+get_acc_pos_func = get_acc_pos_ao6
+
 def gen_positions():
     out = []
     start_d = start_t = t = 0.
     for start_v, end_v, move_t in Moves:
         if move_t is None:
             move_t = abs(end_v - start_v) / ACCEL
-        half_accel = 0.
+        accel = 0.
         if end_v > start_v:
-            half_accel = .5 * ACCEL
+            accel = ACCEL
         elif start_v > end_v:
-            half_accel = -.5 * ACCEL
+            accel = -ACCEL
         end_t = start_t + move_t
         while t <= end_t:
             rel_t = t - start_t
-            out.append(start_d + (start_v + half_accel * rel_t) * rel_t)
+            out.append(start_d + get_acc_pos_func(rel_t, start_v, accel, move_t))
             t += SEG_TIME
-        start_d += (start_v + half_accel * move_t) * move_t
+        start_d += get_acc_pos_func(move_t, start_v, accel, move_t)
         start_t = end_t
     return out
 
@@ -104,7 +132,7 @@ def calc_pa_weighted(t, positions):
 # Belt spring motion
 ######################################################################
 
-HALF_SMOOTH_T = .040 / 2.
+HALF_SMOOTH_T = .005 / 2.
 
 def calc_position_average(t, positions):
     start_pos = positions[time_to_index(t - HALF_SMOOTH_T)]
@@ -139,14 +167,33 @@ def calc_spring_weighted(t, positions):
                for i in range(start_index, end_index)]
     return sum(sa_data) / diff**2
 
+def calc_spring_weighted2(t, positions):
+    base_index = time_to_index(t)
+    start_index = time_to_index(t - HALF_SMOOTH_T) + 1
+    end_index = time_to_index(t + HALF_SMOOTH_T)
+    diff = .5 * (end_index - start_index)
+    sa = SPRING_ADVANCE / HALF_SMOOTH_T**2
+    weighted_data = [positions[i] * (diff - abs(i-base_index))
+                     for i in range(start_index, end_index)]
+    accel_comp = sa * (positions[start_index] + positions[end_index-1]
+                       - 2.*positions[base_index])
+    return sum(weighted_data) / diff**2 + accel_comp
+
+def calc_spring_comp(t, positions):
+    i = time_to_index(t)
+    sa = SPRING_ADVANCE * INV_SEG_TIME * INV_SEG_TIME
+    return (positions[i]
+            + sa * (positions[i-1] - 2.*positions[i] + positions[i+1]))
+
 
 ######################################################################
 # Plotting and startup
 ######################################################################
 
 #gen_updated_position = calc_pa_smooth
-gen_updated_position = calc_position_smooth
-#gen_updated_position = calc_spring_weighted
+#gen_updated_position = calc_position_smooth
+gen_updated_position = calc_spring_weighted2
+#gen_updated_position = calc_spring_comp
 
 MARGIN_TIME = 0.100
 
@@ -167,23 +214,25 @@ def plot_motion():
     fig, (ax1, ax2, ax3) = matplotlib.pyplot.subplots(nrows=3, sharex=True)
     ax1.set_title("Motion")
     ax1.set_ylabel('Velocity (mm/s)')
-    ax1.plot(shift_times, upd_velocities, 'r', label='New Velocity', alpha=0.8)
-    ax1.plot(shift_times, velocities, 'g', label='Nominal Velocity', alpha=0.8)
+    ax1.plot(shift_times, upd_velocities, 'r', label='New Velocity', alpha=0.8, linewidth=1.)
+    ax1.plot(shift_times, velocities, 'g', label='Nominal Velocity', alpha=0.8, linewidth=1.)
+    ax1.set_ylim([-10., 110.])
     fontP = matplotlib.font_manager.FontProperties()
     fontP.set_size('x-small')
     ax1.legend(loc='best', prop=fontP)
     ax1.grid(True)
     ax2.set_ylabel('Acceleration (mm/s^2)')
-    ax2.plot(shift_times, upd_accels, 'r', label='New Accel', alpha=0.8)
-    ax2.plot(shift_times, accels, 'g', label='Nominal Accel', alpha=0.8)
-    ax2.set_ylim([-5. * ACCEL, 5. * ACCEL])
+    ax2.plot(shift_times, upd_accels, 'r', label='New Accel', alpha=0.8, linewidth=1.)
+    ax2.plot(shift_times, accels, 'g', label='Nominal Accel', alpha=0.8, linewidth=1.)
+    ax2.set_ylim([-5.0 * ACCEL, 5.0 * ACCEL])
     ax2.legend(loc='best', prop=fontP)
     ax2.grid(True)
     ax3.set_ylabel('Offset (mm)')
-    ax3.plot(shift_times, upd_offset, 'r', label='Offset', alpha=0.8)
+    ax3.plot(shift_times, upd_offset, 'r', label='Offset', alpha=0.8, linewidth=1.)
     ax3.grid(True)
     ax3.legend(loc='best', prop=fontP)
     ax3.set_xlabel('Time (s)')
+    ax3.set_ylim([-0.15, 0.15])
     return fig
 
 def setup_matplotlib(output_to_file):

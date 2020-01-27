@@ -20,6 +20,7 @@ Moves = [
     (0., 0., .200),
     (0., 100., None), (100., 100., .200), (100., 60., None),
     (60., 100., None), (100., 100., .200), (100., 5., None),
+    #(5., 5., 0.1),
     (0., 0., .300)
 ]
 ACCEL = 3000.
@@ -132,7 +133,7 @@ def calc_pa_weighted(t, positions):
 # Belt spring motion
 ######################################################################
 
-HALF_SMOOTH_T = .005 / 2.
+HALF_SMOOTH_T = .008 / 2.
 
 def calc_position_average(t, positions):
     start_pos = positions[time_to_index(t - HALF_SMOOTH_T)]
@@ -179,6 +180,19 @@ def calc_spring_weighted2(t, positions):
                        - 2.*positions[base_index])
     return sum(weighted_data) / diff**2 + accel_comp
 
+def calc_spring_weighted3(t, positions):
+    base_index = time_to_index(t)
+    start_index = time_to_index(t - HALF_SMOOTH_T) + 1
+    end_index = time_to_index(t + HALF_SMOOTH_T)
+    diff = .5 * (end_index - start_index)
+    sa = SPRING_ADVANCE * INV_SEG_TIME * INV_SEG_TIME
+    weighted_data = [positions[i] * (diff - abs(i-base_index))**2
+                     * (2.*abs(i-base_index) + diff)
+                     for i in range(start_index, end_index)]
+    ac_data = [positions[i] * (2.*abs(i-base_index) - diff)
+               for i in range(start_index, end_index)]
+    return (sum(weighted_data) + 6.*sa*sum(ac_data)) / diff**4
+
 def calc_spring_comp(t, positions):
     i = time_to_index(t)
     sa = SPRING_ADVANCE * INV_SEG_TIME * INV_SEG_TIME
@@ -192,7 +206,7 @@ def calc_spring_comp(t, positions):
 
 #gen_updated_position = calc_pa_smooth
 #gen_updated_position = calc_position_smooth
-gen_updated_position = calc_spring_weighted2
+gen_updated_position = calc_spring_weighted3
 #gen_updated_position = calc_spring_comp
 
 MARGIN_TIME = 0.100

@@ -6,6 +6,7 @@
 # This file may be distributed under the terms of the GNU GPLv3 license.
 import optparse, datetime
 import matplotlib
+import math
 
 SEG_TIME = .000020
 INV_SEG_TIME = 1. / SEG_TIME
@@ -193,6 +194,18 @@ def calc_spring_weighted3(t, positions):
                for i in range(start_index, end_index)]
     return (sum(weighted_data) + 6.*sa*sum(ac_data)) / diff**4
 
+def calc_spring_weighted_cos(t, positions):
+    base_index = time_to_index(t)
+    start_index = time_to_index(t - HALF_SMOOTH_T) + 1
+    end_index = time_to_index(t + HALF_SMOOTH_T)
+    sa = SPRING_ADVANCE * (math.pi / HALF_SMOOTH_T)**2
+    omega = 2.*math.pi / (end_index - start_index)
+    weighted_data = [positions[i] * (1. + math.cos(omega * (i-base_index)))
+                     for i in range(start_index, end_index)]
+    ac_data = [positions[i] * math.cos(omega * (i-base_index))
+               for i in range(start_index, end_index)]
+    return (sum(weighted_data) - sa*sum(ac_data)) / (end_index - start_index)
+
 def calc_spring_comp(t, positions):
     i = time_to_index(t)
     sa = SPRING_ADVANCE * INV_SEG_TIME * INV_SEG_TIME
@@ -206,7 +219,8 @@ def calc_spring_comp(t, positions):
 
 #gen_updated_position = calc_pa_smooth
 #gen_updated_position = calc_position_smooth
-gen_updated_position = calc_spring_weighted3
+#gen_updated_position = calc_spring_weighted3
+gen_updated_position = calc_spring_weighted_cos
 #gen_updated_position = calc_spring_comp
 
 MARGIN_TIME = 0.100

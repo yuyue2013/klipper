@@ -52,7 +52,12 @@ def get_acc_pos_ao6(rel_t, start_v, accel, move_t):
     c1 = start_v;
     return (((c6 * rel_t + c5) * rel_t + c4) * rel_t * rel_t * rel_t + c1) * rel_t
 
-get_acc_pos_func = get_acc_pos_ao6
+def get_acc_pos_trig(rel_t, start_v, accel, move_t):
+    at2 = accel * move_t * .5
+    omega = math.pi / move_t
+    return (start_v + at2) * rel_t - at2 / omega * math.sin(omega * rel_t)
+
+get_acc_pos_func = get_acc_pos_trig
 
 def gen_positions():
     out = []

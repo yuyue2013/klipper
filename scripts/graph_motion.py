@@ -91,7 +91,7 @@ def time_to_index(t):
 ######################################################################
 
 SPRING_FREQ=35.0
-DAMPING=.997
+DAMPING=30.
 
 def estimate_spring(positions):
     ang_freq2 = (SPRING_FREQ * 2. * math.pi)**2
@@ -100,9 +100,9 @@ def estimate_spring(positions):
     for stepper_pos in positions:
         head_a = (stepper_pos - head_pos) * ang_freq2
         head_v += head_a * SEG_TIME
-        head_v *= DAMPING
+        head_v -= head_v * DAMPING * SEG_TIME
         head_pos += head_v * SEG_TIME
-        out.append(stepper_pos - head_pos)
+        out.append(head_pos - stepper_pos)
     return out
 
 

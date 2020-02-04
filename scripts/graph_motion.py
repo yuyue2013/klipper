@@ -102,7 +102,7 @@ def estimate_spring(positions):
         head_v += head_a * SEG_TIME
         head_v -= head_v * DAMPING * SEG_TIME
         head_pos += head_v * SEG_TIME
-        out.append(head_pos - stepper_pos)
+        out.append(head_pos)
     return out
 
 
@@ -160,15 +160,18 @@ def plot_motion():
     positions = gen_positions()
     drop = int(MARGIN_TIME * INV_SEG_TIME)
     times = [SEG_TIME * t for t in range(len(positions))][drop:-drop]
-    velocities = gen_deriv(positions[drop:-drop])
+    margin_positions = positions[drop:-drop]
+    velocities = gen_deriv(margin_positions)
     accels = gen_deriv(velocities)
     # Updated motion
     upd_positions = [gen_updated_position(t, positions) for t in times]
     upd_velocities = gen_deriv(upd_positions)
     upd_accels = gen_deriv(upd_velocities)
     # Estimated position with model of belt as spring
-    spring_orig = estimate_spring(positions[drop:-drop])
+    spring_orig = estimate_spring(margin_positions)
     spring_upd = estimate_spring(upd_positions)
+    spring_diff_orig = [n-o for n, o in zip(spring_orig, margin_positions)]
+    spring_diff_upd = [n-o for n, o in zip(spring_upd, margin_positions)]
     # Build plot
     shift_times = [t - MARGIN_TIME for t in times]
     fig, (ax1, ax2, ax3) = matplotlib.pyplot.subplots(nrows=3, sharex=True)
@@ -188,8 +191,8 @@ def plot_motion():
     ax2.legend(loc='best', prop=fontP)
     ax2.grid(True)
     ax3.set_ylabel('Deviation (mm)')
-    ax3.plot(shift_times, spring_upd, 'r', label='New', alpha=0.8)
-    ax3.plot(shift_times, spring_orig, 'g', label='Nominal', alpha=0.8)
+    ax3.plot(shift_times, spring_diff_upd, 'r', label='New', alpha=0.8)
+    ax3.plot(shift_times, spring_diff_orig, 'g', label='Nominal', alpha=0.8)
     ax3.grid(True)
     ax3.legend(loc='best', prop=fontP)
     ax3.set_xlabel('Time (s)')

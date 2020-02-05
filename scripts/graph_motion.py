@@ -103,10 +103,10 @@ def estimate_spring(positions):
     head_pos = head_v = 0.
     out = []
     for stepper_pos in positions:
+        head_pos += head_v * SEG_TIME
         head_a = (stepper_pos - head_pos) * ang_freq2
         head_v += head_a * SEG_TIME
         head_v -= head_v * DAMPING * SEG_TIME
-        head_pos += head_v * SEG_TIME
         out.append(head_pos)
     return out
 
@@ -137,20 +137,54 @@ def calc_position_weighted(t, positions):
     return sum(weighted_data) / diff**2
 
 SPRING_ADVANCE = .000020
+RESISTANCE_ADVANCE = 0.
 
 def calc_spring_weighted(t, positions):
     base_index = time_to_index(t)
-    start_index = time_to_index(t - HALF_SMOOTH_T) + 1
+    start_index = time_to_index(t - HALF_SMOOTH_T)
     end_index = time_to_index(t + HALF_SMOOTH_T)
     diff = .5 * (end_index - start_index)
     sa = SPRING_ADVANCE * INV_SEG_TIME * INV_SEG_TIME
+    ra = RESISTANCE_ADVANCE * INV_SEG_TIME
     sa_data = [(positions[i]
-                + sa * (positions[i-1] - 2.*positions[i] + positions[i+1]))
+                + sa * (positions[i-1] - 2.*positions[i] + positions[i+1])
+                + ra * (positions[i+1] - positions[i]))
                * (diff - abs(i-base_index))
                for i in range(start_index, end_index)]
     return sum(sa_data) / diff**2
 
 def calc_spring_weighted2(t, positions):
+    base_index = time_to_index(t)
+    start_index = time_to_index(t - HALF_SMOOTH_T)
+    end_index = time_to_index(t + HALF_SMOOTH_T)
+    diff = .5 * (end_index - start_index)
+    sa = SPRING_ADVANCE * INV_SEG_TIME * INV_SEG_TIME
+    ra = RESISTANCE_ADVANCE * INV_SEG_TIME
+    sa_data = [(positions[i]
+                + sa * (positions[i-1] - 2.*positions[i] + positions[i+1])
+                + ra * (positions[i+1] - positions[i]))
+               * (diff - abs(i-base_index))**2
+               * (2.*abs(i-base_index) + diff)
+               for i in range(start_index, end_index)]
+    return sum(sa_data) / diff**4
+
+def calc_spring_double_weighted(t, positions):
+    base_index = time_to_index(t)
+    start_index = time_to_index(t - HALF_SMOOTH_T * .5)
+    end_index = time_to_index(t + HALF_SMOOTH_T * .5)
+    avg_v = base_index - start_index
+    diff = .5 * (end_index - start_index)
+    sa = SPRING_ADVANCE * (INV_SEG_TIME / avg_v)**2
+    ra = RESISTANCE_ADVANCE * INV_SEG_TIME
+    sa_data = [(positions[i]
+                + sa * (positions[i-avg_v] - 2.*positions[i]
+                        + positions[i+avg_v])
+                + ra * (positions[i+1] - positions[i]))
+               * (diff - abs(i-base_index))
+               for i in range(start_index, end_index)]
+    return sum(sa_data) / diff**2
+
+def calc_spring_weighted_diff_int(t, positions):
     base_index = time_to_index(t)
     start_index = time_to_index(t - HALF_SMOOTH_T) + 1
     end_index = time_to_index(t + HALF_SMOOTH_T)
@@ -162,7 +196,7 @@ def calc_spring_weighted2(t, positions):
                        - 2.*positions[base_index])
     return sum(weighted_data) / diff**2 + accel_comp
 
-def calc_spring_weighted3(t, positions):
+def calc_spring_weighted2_diff_int(t, positions):
     base_index = time_to_index(t)
     start_index = time_to_index(t - HALF_SMOOTH_T) + 1
     end_index = time_to_index(t + HALF_SMOOTH_T)
@@ -192,6 +226,11 @@ def calc_spring_comp(t, positions):
     sa = SPRING_ADVANCE * INV_SEG_TIME * INV_SEG_TIME
     return (positions[i]
             + sa * (positions[i-1] - 2.*positions[i] + positions[i+1]))
+
+# Ideal values
+SPRING_ADVANCE = 1. / ((SPRING_FREQ * 2. * math.pi)**2)
+RESISTANCE_ADVANCE = DAMPING * SPRING_ADVANCE
+HALF_SMOOTH_T = (2./3.) * 2. * math.pi * math.sqrt(SPRING_ADVANCE) / 2.
 
 
 ######################################################################
@@ -223,6 +262,10 @@ def plot_motion():
     spring_upd = estimate_spring(upd_positions)
     spring_diff_orig = [n-o for n, o in zip(spring_orig, margin_positions)]
     spring_diff_upd = [n-o for n, o in zip(spring_upd, margin_positions)]
+    head_velocities = gen_deriv(spring_orig)
+    head_accels = gen_deriv(head_velocities)
+    head_upd_velocities = gen_deriv(spring_upd)
+    head_upd_accels = gen_deriv(head_upd_velocities)
     # Build plot
     shift_times = [t - MARGIN_TIME for t in times]
     fig, (ax1, ax2, ax3) = matplotlib.pyplot.subplots(nrows=3, sharex=True)
@@ -231,6 +274,9 @@ def plot_motion():
     ax1.set_ylabel('Velocity (mm/s)')
     ax1.plot(shift_times, upd_velocities, 'r', label='New Velocity', alpha=0.8)
     ax1.plot(shift_times, velocities, 'g', label='Nominal Velocity', alpha=0.8)
+    ax1.plot(shift_times, head_velocities, label='Head Velocity', alpha=0.4)
+    ax1.plot(shift_times, head_upd_velocities, label='New Head Velocity',
+             alpha=0.4)
     fontP = matplotlib.font_manager.FontProperties()
     fontP.set_size('x-small')
     ax1.legend(loc='best', prop=fontP)
@@ -238,6 +284,8 @@ def plot_motion():
     ax2.set_ylabel('Acceleration (mm/s^2)')
     ax2.plot(shift_times, upd_accels, 'r', label='New Accel', alpha=0.8)
     ax2.plot(shift_times, accels, 'g', label='Nominal Accel', alpha=0.8)
+    ax2.plot(shift_times, head_accels, alpha=0.4)
+    ax2.plot(shift_times, head_upd_accels, alpha=0.4)
     ax2.set_ylim([-5. * ACCEL, 5. * ACCEL])
     ax2.legend(loc='best', prop=fontP)
     ax2.grid(True)

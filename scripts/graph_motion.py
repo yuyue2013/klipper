@@ -4,9 +4,8 @@
 # Copyright (C) 2019  Kevin O'Connor <kevin@koconnor.net>
 #
 # This file may be distributed under the terms of the GNU GPLv3 license.
-import optparse, datetime
+import optparse, datetime, math
 import matplotlib
-import math
 
 SEG_TIME = .000020
 INV_SEG_TIME = 1. / SEG_TIME
@@ -18,17 +17,19 @@ INV_SEG_TIME = 1. / SEG_TIME
 
 # List of moves: [(start_v, end_v, move_t), ...]
 Moves = [
+    # X velocities from: 0,0 -> 0,20 -> 40,40 -> 80,40 -> 80,80
     (0., 0., .200),
-    (0., 100., None), (100., 100., .200), (100., 60., None),
-    (60., 100., None), (100., 100., .200), (100., 5., None),
-    #(5., 5., 0.1),
+    (6.869, 89.443, None), (89.443, 89.443, .200), (89.443, 17.361, None),
+    (19.410, 100., None), (100., 100., .200), (100., 5., None),
     (0., 0., .300)
 ]
 ACCEL = 3000.
 
+# Standard constant acceleration generator
 def get_acc_pos_ao2(rel_t, start_v, accel, move_t):
     return (start_v + 0.5 * accel * rel_t) * rel_t
 
+# Bezier curve "accel_order=4" generator
 def get_acc_pos_ao4(rel_t, start_v, accel, move_t):
     inv_accel_t = 1. / move_t
     accel_div_accel_t = accel * inv_accel_t
@@ -39,6 +40,7 @@ def get_acc_pos_ao4(rel_t, start_v, accel, move_t):
     c1 = start_v
     return ((c4 * rel_t + c3) * rel_t * rel_t + c1) * rel_t
 
+# Bezier curve "accel_order=6" generator
 def get_acc_pos_ao6(rel_t, start_v, accel, move_t):
     inv_accel_t = 1. / move_t
     accel_div_accel_t = accel * inv_accel_t
@@ -50,15 +52,17 @@ def get_acc_pos_ao6(rel_t, start_v, accel, move_t):
     c5 = -3. * accel_div_accel_t3;
     c4 = 2.5 * accel_div_accel_t2;
     c1 = start_v;
-    return (((c6 * rel_t + c5) * rel_t + c4) * rel_t * rel_t * rel_t + c1) * rel_t
+    return (((c6 * rel_t + c5) * rel_t + c4)
+            * rel_t * rel_t * rel_t + c1) * rel_t
 
 def get_acc_pos_trig(rel_t, start_v, accel, move_t):
     at2 = accel * move_t * .5
     omega = math.pi / move_t
     return (start_v + at2) * rel_t - at2 / omega * math.sin(omega * rel_t)
 
-get_acc_pos_func = get_acc_pos_trig
+get_acc_pos = get_acc_pos_trig
 
+# Calculate positions based on 'Moves' list
 def gen_positions():
     out = []
     start_d = start_t = t = 0.
@@ -73,9 +77,9 @@ def gen_positions():
         end_t = start_t + move_t
         while t <= end_t:
             rel_t = t - start_t
-            out.append(start_d + get_acc_pos_func(rel_t, start_v, accel, move_t))
+            out.append(start_d + get_acc_pos(rel_t, start_v, accel, move_t))
             t += SEG_TIME
-        start_d += get_acc_pos_func(move_t, start_v, accel, move_t)
+        start_d += get_acc_pos(move_t, start_v, accel, move_t)
         start_t = end_t
     return out
 
@@ -88,55 +92,27 @@ def time_to_index(t):
 
 
 ######################################################################
-# Pressure advance
+# Estimated motion with belt as spring
 ######################################################################
 
-PA_HALF_SMOOTH_T = .040 / 2.
-PRESSURE_ADVANCE = .045
-PRESSURE_ADVANCE_FACTOR = PRESSURE_ADVANCE / (2. * PA_HALF_SMOOTH_T)
+SPRING_FREQ=35.0
+DAMPING=30.
 
-def calc_pa_raw(t, positions):
-    pa = PRESSURE_ADVANCE * INV_SEG_TIME
-    i = time_to_index(t)
-    return positions[i] + pa * (positions[i+1] - positions[i])
-
-def calc_pa_average(t, positions):
-    base_pos = positions[time_to_index(t)]
-    start_pos = positions[time_to_index(t - PA_HALF_SMOOTH_T)]
-    end_pos = positions[time_to_index(t + PA_HALF_SMOOTH_T)]
-    return base_pos + (end_pos - start_pos) * PRESSURE_ADVANCE_FACTOR
-
-def calc_pa_smooth(t, positions):
-    start_index = time_to_index(t - PA_HALF_SMOOTH_T) + 1
-    end_index = time_to_index(t + PA_HALF_SMOOTH_T)
-    pa = PRESSURE_ADVANCE * INV_SEG_TIME
-    pa_data = [positions[i] + pa * (positions[i+1] - positions[i])
-               for i in range(start_index, end_index)]
-    return sum(pa_data) / (end_index - start_index)
-
-def calc_pa_approx_weighted(t, positions):
-    start_index = time_to_index(t - PA_HALF_SMOOTH_T) + 1
-    mid_index = time_to_index(t)
-    end_index = time_to_index(t + PA_HALF_SMOOTH_T)
-    prev_i = sum(positions[start_index:mid_index]) / (mid_index - start_index)
-    post_i = sum(positions[mid_index+1:end_index]) / (end_index - mid_index - 1)
-    base_pos = .5 * (prev_i + post_i)
-    return base_pos + (post_i - prev_i) * 2. * PRESSURE_ADVANCE_FACTOR
-
-def calc_pa_weighted(t, positions):
-    base_index = time_to_index(t)
-    start_index = time_to_index(t - PA_HALF_SMOOTH_T) + 1
-    end_index = time_to_index(t + PA_HALF_SMOOTH_T)
-    diff = .5 * (end_index - start_index)
-    pa = PRESSURE_ADVANCE * INV_SEG_TIME
-    pa_data = [(positions[i] + pa * (positions[i+1] - positions[i]))
-               * (diff - abs(i-base_index))
-               for i in range(start_index, end_index)]
-    return sum(pa_data) / diff**2
+def estimate_spring(positions):
+    ang_freq2 = (SPRING_FREQ * 2. * math.pi)**2
+    head_pos = head_v = 0.
+    out = []
+    for stepper_pos in positions:
+        head_a = (stepper_pos - head_pos) * ang_freq2
+        head_v += head_a * SEG_TIME
+        head_v -= head_v * DAMPING * SEG_TIME
+        head_pos += head_v * SEG_TIME
+        out.append(head_pos)
+    return out
 
 
 ######################################################################
-# Belt spring motion
+# Motion functions
 ######################################################################
 
 HALF_SMOOTH_T = .008 / 2.
@@ -235,37 +211,42 @@ def plot_motion():
     positions = gen_positions()
     drop = int(MARGIN_TIME * INV_SEG_TIME)
     times = [SEG_TIME * t for t in range(len(positions))][drop:-drop]
-    velocities = gen_deriv(positions[drop:-drop])
+    margin_positions = positions[drop:-drop]
+    velocities = gen_deriv(margin_positions)
     accels = gen_deriv(velocities)
     # Updated motion
     upd_positions = [gen_updated_position(t, positions) for t in times]
     upd_velocities = gen_deriv(upd_positions)
     upd_accels = gen_deriv(upd_velocities)
-    upd_offset = [up - p for p, up in zip(positions[drop:-drop], upd_positions)]
+    # Estimated position with model of belt as spring
+    spring_orig = estimate_spring(margin_positions)
+    spring_upd = estimate_spring(upd_positions)
+    spring_diff_orig = [n-o for n, o in zip(spring_orig, margin_positions)]
+    spring_diff_upd = [n-o for n, o in zip(spring_upd, margin_positions)]
     # Build plot
     shift_times = [t - MARGIN_TIME for t in times]
     fig, (ax1, ax2, ax3) = matplotlib.pyplot.subplots(nrows=3, sharex=True)
-    ax1.set_title("Motion")
+    ax1.set_title("Simulation (belt frequency=%.3f, damping=%.3f)"
+                  % (SPRING_FREQ, DAMPING))
     ax1.set_ylabel('Velocity (mm/s)')
-    ax1.plot(shift_times, upd_velocities, 'r', label='New Velocity', alpha=0.8, linewidth=1.)
-    ax1.plot(shift_times, velocities, 'g', label='Nominal Velocity', alpha=0.8, linewidth=1.)
-    ax1.set_ylim([-10., 110.])
+    ax1.plot(shift_times, upd_velocities, 'r', label='New Velocity', alpha=0.8)
+    ax1.plot(shift_times, velocities, 'g', label='Nominal Velocity', alpha=0.8)
     fontP = matplotlib.font_manager.FontProperties()
     fontP.set_size('x-small')
     ax1.legend(loc='best', prop=fontP)
     ax1.grid(True)
     ax2.set_ylabel('Acceleration (mm/s^2)')
-    ax2.plot(shift_times, upd_accels, 'r', label='New Accel', alpha=0.8, linewidth=1.)
-    ax2.plot(shift_times, accels, 'g', label='Nominal Accel', alpha=0.8, linewidth=1.)
-    ax2.set_ylim([-5.0 * ACCEL, 5.0 * ACCEL])
+    ax2.plot(shift_times, upd_accels, 'r', label='New Accel', alpha=0.8)
+    ax2.plot(shift_times, accels, 'g', label='Nominal Accel', alpha=0.8)
+    ax2.set_ylim([-5. * ACCEL, 5. * ACCEL])
     ax2.legend(loc='best', prop=fontP)
     ax2.grid(True)
-    ax3.set_ylabel('Offset (mm)')
-    ax3.plot(shift_times, upd_offset, 'r', label='Offset', alpha=0.8, linewidth=1.)
+    ax3.set_ylabel('Deviation (mm)')
+    ax3.plot(shift_times, spring_diff_upd, 'r', label='New', alpha=0.8)
+    ax3.plot(shift_times, spring_diff_orig, 'g', label='Nominal', alpha=0.8)
     ax3.grid(True)
     ax3.legend(loc='best', prop=fontP)
     ax3.set_xlabel('Time (s)')
-    ax3.set_ylim([-0.15, 0.15])
     return fig
 
 def setup_matplotlib(output_to_file):

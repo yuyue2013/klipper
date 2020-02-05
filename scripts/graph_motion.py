@@ -60,7 +60,7 @@ def get_acc_pos_trig(rel_t, start_v, accel, move_t):
     omega = math.pi / move_t
     return (start_v + at2) * rel_t - at2 / omega * math.sin(omega * rel_t)
 
-get_acc_pos = get_acc_pos_trig
+get_acc_pos = get_acc_pos_ao6
 
 # Calculate positions based on 'Moves' list
 def gen_positions():
@@ -115,7 +115,7 @@ def estimate_spring(positions):
 # Motion functions
 ######################################################################
 
-HALF_SMOOTH_T = .008 / 2.
+HALF_SMOOTH_T = .010 / 2.
 
 def calc_position_average(t, positions):
     start_pos = positions[time_to_index(t - HALF_SMOOTH_T)]
@@ -190,11 +190,14 @@ def calc_spring_weighted_diff_int(t, positions):
     end_index = time_to_index(t + HALF_SMOOTH_T)
     diff = .5 * (end_index - start_index)
     sa = SPRING_ADVANCE / HALF_SMOOTH_T**2
+    ra = RESISTANCE_ADVANCE / HALF_SMOOTH_T
     weighted_data = [positions[i] * (diff - abs(i-base_index))
                      for i in range(start_index, end_index)]
     accel_comp = sa * (positions[start_index] + positions[end_index-1]
                        - 2.*positions[base_index])
-    return sum(weighted_data) / diff**2 + accel_comp
+    rc_data = [positions[i] * cmp(i, base_index)
+               for i in range(start_index, end_index)]
+    return sum(weighted_data) / diff**2 + ra * sum(rc_data) / diff + accel_comp
 
 def calc_spring_weighted2_diff_int(t, positions):
     base_index = time_to_index(t)
@@ -202,24 +205,31 @@ def calc_spring_weighted2_diff_int(t, positions):
     end_index = time_to_index(t + HALF_SMOOTH_T)
     diff = .5 * (end_index - start_index)
     sa = SPRING_ADVANCE * INV_SEG_TIME * INV_SEG_TIME
+    ra = RESISTANCE_ADVANCE * INV_SEG_TIME
     weighted_data = [positions[i] * (diff - abs(i-base_index))**2
                      * (2.*abs(i-base_index) + diff)
                      for i in range(start_index, end_index)]
     ac_data = [positions[i] * (2.*abs(i-base_index) - diff)
                for i in range(start_index, end_index)]
-    return (sum(weighted_data) + 6.*sa*sum(ac_data)) / diff**4
+    rc_data = [positions[i] * (i-base_index) * (diff - abs(i-base_index))
+               for i in range(start_index, end_index)]
+    return (sum(weighted_data) + 6.*sa*sum(ac_data) + 6.*ra*sum(rc_data)) / diff**4
 
 def calc_spring_weighted_cos(t, positions):
     base_index = time_to_index(t)
     start_index = time_to_index(t - HALF_SMOOTH_T) + 1
     end_index = time_to_index(t + HALF_SMOOTH_T)
     sa = SPRING_ADVANCE * (math.pi / HALF_SMOOTH_T)**2
+    ra = RESISTANCE_ADVANCE * math.pi / HALF_SMOOTH_T
     omega = 2.*math.pi / (end_index - start_index)
     weighted_data = [positions[i] * (1. + math.cos(omega * (i-base_index)))
                      for i in range(start_index, end_index)]
     ac_data = [positions[i] * math.cos(omega * (i-base_index))
                for i in range(start_index, end_index)]
-    return (sum(weighted_data) - sa*sum(ac_data)) / (end_index - start_index)
+    rc_data = [positions[i] * math.sin(omega * (i-base_index))
+               for i in range(start_index, end_index)]
+    return (sum(weighted_data) - sa*sum(ac_data) + ra * sum(rc_data)) / (
+            end_index - start_index)
 
 def calc_spring_comp(t, positions):
     i = time_to_index(t)
@@ -240,7 +250,7 @@ HALF_SMOOTH_T = (2./3.) * 2. * math.pi * math.sqrt(SPRING_ADVANCE) / 2.
 #gen_updated_position = calc_pa_smooth
 #gen_updated_position = calc_position_smooth
 #gen_updated_position = calc_spring_weighted3
-gen_updated_position = calc_spring_weighted_cos
+gen_updated_position = calc_spring_weighted2_diff_int
 #gen_updated_position = calc_spring_comp
 
 MARGIN_TIME = 0.100

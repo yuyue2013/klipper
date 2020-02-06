@@ -26,7 +26,7 @@ Moves = [
     (0., 0., .300)
 ]
 ACCEL = 3000.
-MAX_JERK = ACCEL * 0.6 * SPRING_FREQ
+MAX_JERK = ACCEL * 2.0 * SPRING_FREQ
 
 def get_accel(start_v, end_v):
     return ACCEL
@@ -71,7 +71,7 @@ def get_acc_pos_trig(rel_t, start_v, accel, move_t):
     return (start_v + at2) * rel_t - at2 / omega * math.sin(omega * rel_t)
 
 get_acc_pos = get_acc_pos_ao2
-get_acc = get_accel
+get_acc = get_accel_jerk_limit
 
 # Calculate positions based on 'Moves' list
 def gen_positions():
@@ -246,12 +246,18 @@ def calc_spring_weighted_zero_off(t, positions):
         d2 = (i - base_index) * (i - base_index)
         h2 = diff * diff
         return -3.*d2*d2*d2 + 7.*h2*d2*d2 - 5.*h2*h2*d2 + h2*h2*h2
+    def weight2(i):
+        d = i-base_index
+        h = diff
+        # More smooth, more computationally intensive
+        return 11./3. * d**8 - 12. * h**2 * d**6 + 14. * h**4 * d**4 - 20./3. * h**6 * d**2 + h**8
     sa_data = [(positions[i]
                 + sa * (positions[i-1] - 2.*positions[i] + positions[i+1])
                 + ra * (positions[i+1] - positions[i]))
                * weight(i)
                for i in range(start_index, end_index)]
     return sum(sa_data) * 105. / (64. * diff**7)
+    #return sum(sa_data) * 945. / (512. * diff**9)
 
 def calc_spring_comp(t, positions):
     i = time_to_index(t)
@@ -262,7 +268,7 @@ def calc_spring_comp(t, positions):
 # Ideal values
 SPRING_ADVANCE = 1. / ((SPRING_FREQ * 2. * math.pi)**2)
 RESISTANCE_ADVANCE = DAMPING * SPRING_ADVANCE
-HALF_SMOOTH_T = (2./2.) * 2. * math.pi * math.sqrt(SPRING_ADVANCE) / 2.
+HALF_SMOOTH_T = .5 / SPRING_FREQ
 
 
 ######################################################################
@@ -318,7 +324,7 @@ def plot_motion():
     ax2.plot(shift_times, accels, 'g', label='Nominal Accel', alpha=0.8)
     ax2.plot(shift_times, head_accels, alpha=0.4)
     ax2.plot(shift_times, head_upd_accels, alpha=0.4)
-    ax2.set_ylim([-5. * ACCEL, 5. * ACCEL])
+    ax2.set_ylim([-2. * ACCEL, 2. * ACCEL])
     ax2.legend(loc='best', prop=fontP)
     ax2.grid(True)
     ax3.set_ylabel('Deviation (mm)')

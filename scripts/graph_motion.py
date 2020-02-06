@@ -7,7 +7,7 @@
 import optparse, datetime, math
 import matplotlib
 
-SEG_TIME = .000020
+SEG_TIME = .000050
 INV_SEG_TIME = 1. / SEG_TIME
 
 SPRING_FREQ=35.0
@@ -70,8 +70,8 @@ def get_acc_pos_trig(rel_t, start_v, accel, move_t):
     omega = math.pi / move_t
     return (start_v + at2) * rel_t - at2 / omega * math.sin(omega * rel_t)
 
-get_acc_pos = get_acc_pos_ao6
-get_acc = get_accel_jerk_limit
+get_acc_pos = get_acc_pos_ao2
+get_acc = get_accel
 
 # Calculate positions based on 'Moves' list
 def gen_positions():
@@ -235,6 +235,24 @@ def calc_spring_weighted_cos(t, positions):
     return (sum(weighted_data) - sa*sum(ac_data) + ra * sum(rc_data)) / (
             end_index - start_index)
 
+def calc_spring_weighted_zero_off(t, positions):
+    base_index = time_to_index(t)
+    start_index = time_to_index(t - HALF_SMOOTH_T) + 1
+    end_index = time_to_index(t + HALF_SMOOTH_T)
+    diff = .5 * (end_index - start_index)
+    sa = SPRING_ADVANCE * INV_SEG_TIME * INV_SEG_TIME
+    ra = RESISTANCE_ADVANCE * INV_SEG_TIME
+    def weight(i):
+        d2 = (i - base_index) * (i - base_index)
+        h2 = diff * diff
+        return -3.*d2*d2*d2 + 7.*h2*d2*d2 - 5.*h2*h2*d2 + h2*h2*h2
+    sa_data = [(positions[i]
+                + sa * (positions[i-1] - 2.*positions[i] + positions[i+1])
+                + ra * (positions[i+1] - positions[i]))
+               * weight(i)
+               for i in range(start_index, end_index)]
+    return sum(sa_data) * 105. / (64. * diff**7)
+
 def calc_spring_comp(t, positions):
     i = time_to_index(t)
     sa = SPRING_ADVANCE * INV_SEG_TIME * INV_SEG_TIME
@@ -244,7 +262,7 @@ def calc_spring_comp(t, positions):
 # Ideal values
 SPRING_ADVANCE = 1. / ((SPRING_FREQ * 2. * math.pi)**2)
 RESISTANCE_ADVANCE = DAMPING * SPRING_ADVANCE
-HALF_SMOOTH_T = (2./3.) * 2. * math.pi * math.sqrt(SPRING_ADVANCE) / 2.
+HALF_SMOOTH_T = (2./2.) * 2. * math.pi * math.sqrt(SPRING_ADVANCE) / 2.
 
 
 ######################################################################
@@ -254,7 +272,7 @@ HALF_SMOOTH_T = (2./3.) * 2. * math.pi * math.sqrt(SPRING_ADVANCE) / 2.
 #gen_updated_position = calc_pa_smooth
 #gen_updated_position = calc_position_smooth
 #gen_updated_position = calc_spring_weighted3
-gen_updated_position = calc_spring_weighted2_diff_int
+gen_updated_position = calc_spring_weighted_zero_off
 #gen_updated_position = calc_spring_comp
 
 MARGIN_TIME = 0.100

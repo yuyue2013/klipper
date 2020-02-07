@@ -71,7 +71,7 @@ def get_acc_pos_trig(rel_t, start_v, accel, move_t):
     return (start_v + at2) * rel_t - at2 / omega * math.sin(omega * rel_t)
 
 get_acc_pos = get_acc_pos_ao2
-get_acc = get_accel_jerk_limit
+get_acc = get_accel
 
 # Calculate positions based on 'Moves' list
 def gen_positions():
@@ -167,10 +167,11 @@ def calc_spring_weighted2(t, positions):
     sa_data = [(positions[i]
                 + sa * (positions[i-1] - 2.*positions[i] + positions[i+1])
                 + ra * (positions[i+1] - positions[i]))
-               * (diff - abs(i-base_index))**2
-               * (2.*abs(i-base_index) + diff)
+                * ((i-base_index)**2 - diff**2)**2
+               #* (diff - abs(i-base_index))**2
+               #* (2.*abs(i-base_index) + diff)
                for i in range(start_index, end_index)]
-    return sum(sa_data) / diff**4
+    return sum(sa_data) * 15. / 16. / diff**5
 
 def calc_spring_double_weighted(t, positions):
     base_index = time_to_index(t)
@@ -268,7 +269,7 @@ def calc_spring_comp(t, positions):
 # Ideal values
 SPRING_ADVANCE = 1. / ((SPRING_FREQ * 2. * math.pi)**2)
 RESISTANCE_ADVANCE = DAMPING * SPRING_ADVANCE
-HALF_SMOOTH_T = .5 / SPRING_FREQ
+HALF_SMOOTH_T = .5 / SPRING_FREQ * 2. / 3.
 
 
 ######################################################################
@@ -278,7 +279,8 @@ HALF_SMOOTH_T = .5 / SPRING_FREQ
 #gen_updated_position = calc_pa_smooth
 #gen_updated_position = calc_position_smooth
 #gen_updated_position = calc_spring_weighted3
-gen_updated_position = calc_spring_weighted_zero_off
+gen_updated_position = calc_spring_weighted2
+#gen_updated_position = calc_spring_weighted_zero_off
 #gen_updated_position = calc_spring_comp
 
 MARGIN_TIME = 0.100

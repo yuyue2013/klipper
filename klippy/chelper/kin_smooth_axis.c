@@ -24,12 +24,18 @@ move_integrate(struct move *m, int axis, double start, double end
     if (end > m->move_t)
         end = m->move_t;
     double axis_r = m->axes_r.axis[axis - 'x'];
-    double start_pos = m->start_pos.axis[axis - 'x']
-        + axis_r * (2. * m->half_accel * accel_comp
-                    + m->start_v * damping_comp);
-    double start_v = axis_r * (m->start_v + 2. * m->half_accel * damping_comp);
-    return integrate_weighted(start_pos, start_v, axis_r * m->half_accel
-                              , start, end, time_offset, hst);
+    double start_pos = m->start_pos.axis[axis - 'x'];
+    double start_v = axis_r * m->start_v;
+    double half_accel = axis_r * m->half_accel;
+    double res = integrate_weighted(start_pos, start_v, half_accel
+                                    , start, end, time_offset, hst);
+    if (damping_comp)
+        res += damping_comp * integrate_deriv_weighted(
+                start_pos, start_v, half_accel, start, end, time_offset, hst);
+    if (accel_comp)
+        res += accel_comp * integrate_2nd_deriv_weighted(
+                start_pos, start_v, half_accel, start, end, time_offset, hst);
+    return res;
 }
 
 // Calculate the definitive integral for a range of moves

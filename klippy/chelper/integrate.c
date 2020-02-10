@@ -7,6 +7,16 @@
 
 #include "integrate.h"
 
+// Calculate (t^2-h^2)^2
+static inline double
+w(double h, double t)
+{
+    double t2 = t*t;
+    double h2 = h*h;
+    double r = t2-h2;
+    return r * r;
+}
+
 // Integrate (t^2-h^2)^2
 static inline double
 iwt0(double h, double t)
@@ -37,60 +47,6 @@ iwt2(double h, double t)
     return (((1./7.) * t2 - .4 * h2) * t2 + (1./3.) * h4) * t2 * t;
 }
 
-// Integrate -4*t*(t^2-h^2)
-static inline double
-idwt0(double h, double t)
-{
-    double t2 = t*t;
-    double h2 = h*h;
-    return (2. * h2 - t2) * t2;
-}
-
-// Integrate t * -4*t*(t^2-h^2)
-static inline double
-idwt1(double h, double t)
-{
-    double t2 = t*t;
-    double h2 = h*h;
-    return ((4./3.) * h2 - .8 * t2) * t2 * t;
-}
-
-// Integrate t^2 * 4*(3*t^2-h^2)
-static inline double
-idwt2(double h, double t)
-{
-    double t2 = t*t;
-    double h2 = h*h;
-    return (h2 - (2./3.) * t2) * t2 * t2;
-}
-
-// Integrate 4*(3*t^2-h^2)
-static inline double
-idw2t0(double h, double t)
-{
-    double t2 = t*t;
-    double h2 = h*h;
-    return 4. * (t2 - h2) * t;
-}
-
-// Integrate t * 4*(3*t^2-h^2)
-static inline double
-idw2t1(double h, double t)
-{
-    double t2 = t*t;
-    double h2 = h*h;
-    return (3. * t2 - 2. * h2) * t2;
-}
-
-// Integrate t^2 * 4*(3*t^2-h^2)
-static inline double
-idw2t2(double h, double t)
-{
-    double t2 = t*t;
-    double h2 = h*h;
-    return (2.4 * t2 - (4./3.) * h2) * t2 * t;
-}
-
 // Integrate (pos + start_v*t + half_accel*t^2) with smoothing weight function
 // over the range [start; end] with T == -toff
 double
@@ -107,37 +63,18 @@ integrate_weighted(double pos, double start_v, double half_accel
     return res;
 }
 
-// Integrate derivative of (pos + start_v*t + half_accel*t^2) with smoothing
-// weight function over the range [start; end] with T == -toff
+// Integrate velocity jumps near the ends of the range [start; end] with
+// smoothing weight function. To get correct results it is required to sum up
+// the returned values over the full integration range [T-hst; T+hst].
 double
-integrate_deriv_weighted(double pos, double start_v, double half_accel
+integrate_velocity_jumps(double start_v, double half_accel
                          , double start, double end, double toff, double hst)
 {
-    // Substitute the integration variable tnew = t + toff to simplify integrals
-    pos += (half_accel * toff - start_v) * toff;
-    start_v -= 2. * half_accel * toff;
-    start += toff; end += toff;
-    double res = half_accel * (idwt2(hst, end) - idwt2(hst, start));
-    res += start_v * (idwt1(hst, end) - idwt1(hst, start));
-    res += pos * (idwt0(hst, end) - idwt0(hst, start));
-    return res;
-}
-
-// Integrate 2nd derivative of (pos + start_v*t + half_accel*t^2) with smoothing
-// weight function over the range [start; end] with T == -toff
-double
-integrate_2nd_deriv_weighted(double pos, double start_v, double half_accel
-                             , double start, double end, double toff
-                             , double hst)
-{
-    // Substitute the integration variable tnew = t + toff to simplify integrals
-    pos += (half_accel * toff - start_v) * toff;
-    start_v -= 2. * half_accel * toff;
-    start += toff; end += toff;
-    double res = half_accel * (idw2t2(hst, end) - idw2t2(hst, start));
-    res += start_v * (idw2t1(hst, end) - idw2t1(hst, start));
-    res += pos * (idw2t0(hst, end) - idw2t0(hst, start));
-    return res;
+    double end_v = start_v + 2. * half_accel * end;
+    start_v += 2. * half_accel * start;
+    // Velocity jumps integration assumes that the weight function vanishes at
+    // the integration bounds T-hst and T+hst to ignore velocity jumps there.
+    return start_v * w(hst, start + toff) - end_v * w(hst, end + toff);
 }
 
 // Calculate the inverse of the norm of the weight function

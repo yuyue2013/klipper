@@ -7,44 +7,46 @@
 
 #include "integrate.h"
 
-// Calculate (t^2-h^2)^2
+// Calculate (-3*t^6 + 7*h^2*t^4 - 5*h^4*t^2 + h^6)
 static inline double
 w(double h, double t)
 {
     double t2 = t*t;
     double h2 = h*h;
-    double r = t2-h2;
-    return r * r;
+    double h4 = h2*h2;
+    return ((-3. * t2 + 7. * h2) * t2 - 5. * h4) * t2 + h4 * h2;
 }
 
-// Integrate (t^2-h^2)^2
+// Integrate (-3*t^6 + 7*h^2*t^4 - 5*h^4*t^2 + h^6)
 static inline double
 iwt0(double h, double t)
 {
     double t2 = t*t;
     double h2 = h*h;
     double h4 = h2*h2;
-    return ((.2 * t2 - (2./3.) * h2) * t2 + h4) * t;
+    return ((((-3./7.) * t2 + (7./5.) * h2) * t2 - (5./3.) * h4) * t2
+            + h4 * h2) * t;
 }
 
-// Integrate t * (t^2-h^2)^2
+// Integrate t * (-3*t^6 + 7*h^2*t^4 - 5*h^4*t^2 + h^6)
 static inline double
 iwt1(double h, double t)
 {
     double t2 = t*t;
     double h2 = h*h;
-    double r = t2-h2;
-    return (1./6.) * r * r * r;
+    double h4 = h2*h2;
+    return ((((-3./8.) * t2 + (7./6.) * h2) * t2 - (5./4.) * h4) * t2
+            + .5 * h4 * h2) * t2;
 }
 
-// Integrate t^2 * (t^2-h^2)^2
+// Integrate t^2 * (-3*t^6 + 7*h^2*t^4 - 5*h^4*t^2 + h^6)
 static inline double
 iwt2(double h, double t)
 {
     double t2 = t*t;
     double h2 = h*h;
     double h4 = h2*h2;
-    return (((1./7.) * t2 - .4 * h2) * t2 + (1./3.) * h4) * t2 * t;
+    return ((((-1./3.) * t2 + h2) * t2 - h4) * t2 + (1./3.) * h4 * h2) * t2 * t;
 }
 
 // Integrate (pos + start_v*t + half_accel*t^2) with smoothing weight function
@@ -81,6 +83,6 @@ integrate_velocity_jumps(double start_v, double half_accel
 double
 calc_inv_norm(double hst)
 {
-    // Inverse norm of the weight function ((t-T)^2-h^2)^2
-    return 15. / (16. * hst * hst * hst * hst * hst);
+    // Inverse norm of weight function (-3*t^6 + 7*h^2*t^4 - 5*h^4*t^2 + h^6)
+    return 105. / (64. * hst * hst * hst * hst * hst * hst * hst);
 }

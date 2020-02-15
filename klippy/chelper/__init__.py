@@ -68,7 +68,7 @@ defs_moveq = """
     int moveq_add(struct moveq *mq, double move_d
         , double junction_max_v2, double velocity
         , int accel_order, double accel, double smoothed_accel
-        , double jerk, double min_jerk_limit_time, double accel_comp);
+        , double jerk, double min_jerk_limit_time);
     int moveq_plan(struct moveq *mq, int lazy);
     double moveq_getmove(struct moveq *mq
         , struct trap_accel_decel *accel_decel);
@@ -121,9 +121,6 @@ defs_kin_extruder = """
     struct stepper_kinematics *extruder_stepper_alloc(void);
     void extruder_set_smooth_time(struct stepper_kinematics *sk
         , double smooth_time);
-    void extruder_add_move(struct trapq *tq, double print_time
-        , double start_e_pos, double extrude_r, double pressure_advance
-        , const struct trap_accel_decel *accel_decel);
 """
 
 defs_kin_smooth_axis = """

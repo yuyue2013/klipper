@@ -11,7 +11,6 @@ struct accel_group {
     double min_jerk_limit_time;
     double combined_d, accel_d;
     double accel_t, accel_offset_t, total_accel_t;
-    double uncomp_accel_t, uncomp_accel_offset_t;
     double start_accel_v;
     double effective_accel;
     struct accel_group *start_accel, *next_accel;

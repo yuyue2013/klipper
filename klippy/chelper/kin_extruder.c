@@ -36,7 +36,8 @@ extruder_integrate(struct move *m, double start, double end)
     double pa_add = pressure_advance * scurve_diff(&m->s, start, end);
     double base = m->start_pos.x * (end - start);
     double integral = scurve_integrate(&m->s, start, end);
-    return base + integral + pa_add;
+    double extrude_r = m->axes_r.x;
+    return base + extrude_r * (integral + pa_add);
 }
 
 // Calculate the definitive integral of time weighted position:
@@ -50,7 +51,8 @@ extruder_integrate_time(struct move *m, double start, double end)
         * scurve_deriv_t_integrate(&m->s, start, end);
     double base = .5 * m->start_pos.x * (end * end - start * start);
     double integral = scurve_integrate_t(&m->s, start, end);
-    return base + integral + pa_add;
+    double extrude_r = m->axes_r.x;
+    return base + extrude_r * (integral + pa_add);
 }
 
 // Calculate the definitive integral of extruder for a given move
@@ -129,42 +131,4 @@ extruder_stepper_alloc(void)
     es->sk.calc_position_cb = extruder_calc_position;
     es->sk.active_flags = AF_X;
     return &es->sk;
-}
-
-// Populate a 'struct move' with an extruder velocity trapezoid
-void __visible
-extruder_add_move(struct trapq *tq, double print_time, double start_e_pos
-                  , double extrude_r, double pressure_advance
-                  , const struct trap_accel_decel *accel_decel)
-{
-    // NB: acceleration compensation reduces duration of moves in the beginning
-    // of acceleration move group, and increases it in case of deceleration.
-    // The extruder kinematics does not follow acceleration compensation, so
-    // print_time must be adjusted accordingly to track the start and the
-    // duration of the non-compensated moves.
-    if (accel_decel->total_accel_t)
-        print_time += accel_decel->uncomp_accel_offset_t
-            - accel_decel->accel_offset_t;
-    else if (accel_decel->total_decel_t)
-        print_time += accel_decel->uncomp_decel_offset_t
-            - accel_decel->decel_offset_t;
-
-    // Generate trap_accel_decel for extruder
-    struct trap_accel_decel new_accel_decel = *accel_decel;
-    // Disable acceleration compensation
-    new_accel_decel.accel_comp = 0.;
-    new_accel_decel.accel_t = new_accel_decel.uncomp_accel_t;
-    new_accel_decel.accel_offset_t = new_accel_decel.uncomp_accel_offset_t;
-    new_accel_decel.decel_t = new_accel_decel.uncomp_decel_t;
-    new_accel_decel.decel_offset_t = new_accel_decel.uncomp_decel_offset_t;
-
-    new_accel_decel.start_accel_v *= extrude_r;
-    new_accel_decel.cruise_v *= extrude_r;
-    new_accel_decel.effective_accel *= extrude_r;
-    new_accel_decel.effective_decel *= extrude_r;
-
-    // Queue movement (x is extruder movement, y is movement with pa)
-    trapq_append(tq, print_time,
-                 start_e_pos, 0., 0.,
-                 1., pressure_advance, 0., &new_accel_decel);
 }

@@ -72,8 +72,7 @@ check_can_combine(struct accel_combiner *ac
     struct accel_group *prev_accel = prev_jp->move_ag;
     struct accel_group *next_accel = next_jp->move_ag;
     return next_accel->accel_order != 2
-        && prev_accel->accel_order == next_accel->accel_order
-        && prev_accel->move->accel_comp == next_accel->move->accel_comp;
+        && prev_accel->accel_order == next_accel->accel_order;
 }
 
 static void

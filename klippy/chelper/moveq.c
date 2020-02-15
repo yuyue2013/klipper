@@ -266,13 +266,10 @@ int __visible
 moveq_add(struct moveq *mq, double move_d
           , double junction_max_v2, double velocity
           , int accel_order, double accel, double smoothed_accel
-          , double jerk, double min_jerk_limit_time, double accel_comp)
+          , double jerk, double min_jerk_limit_time)
 {
     struct qmove *m = qmove_alloc();
-
-    m->accel_comp = accel_comp;
     m->move_d = move_d;
-
     fill_accel_group(&m->default_accel, m, accel_order, accel, jerk
             , min_jerk_limit_time);
     m->max_cruise_v2 = velocity * velocity;
@@ -300,7 +297,6 @@ moveq_getmove(struct moveq *mq, struct trap_accel_decel *accel_decel)
         return ERROR_RET;
     }
     struct qmove *move = list_first_entry(&mq->moves, struct qmove, node);
-    accel_decel->accel_comp = move->accel_comp;
     struct accel_group *accel = &move->accel_group;
     struct accel_group *decel = &move->decel_group;
     accel_decel->accel_order = accel->accel_order;
@@ -315,13 +311,9 @@ moveq_getmove(struct moveq *mq, struct trap_accel_decel *accel_decel)
     accel_decel->accel_t = accel->accel_t;
     accel_decel->accel_offset_t = accel->accel_offset_t;
     accel_decel->total_accel_t = accel->total_accel_t;
-    accel_decel->uncomp_accel_t = accel->uncomp_accel_t;
-    accel_decel->uncomp_accel_offset_t = accel->uncomp_accel_offset_t;
     accel_decel->decel_t = decel->accel_t;
     accel_decel->decel_offset_t = decel->accel_offset_t;
     accel_decel->total_decel_t = decel->total_accel_t;
-    accel_decel->uncomp_decel_t = decel->uncomp_accel_t;
-    accel_decel->uncomp_decel_offset_t = decel->uncomp_accel_offset_t;
     double cruise_d = move->move_d - accel->accel_d - decel->accel_d;
     accel_decel->cruise_t = cruise_d / move->cruise_v;
     // Only used to track smootheness, can be deleted

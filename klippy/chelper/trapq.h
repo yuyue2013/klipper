@@ -23,13 +23,10 @@ struct move {
 
 struct trap_accel_decel {
     double accel_t, accel_offset_t, total_accel_t;
-    double uncomp_accel_t, uncomp_accel_offset_t;
     double cruise_t;
     double decel_t, decel_offset_t, total_decel_t;
-    double uncomp_decel_t, uncomp_decel_offset_t;
     double start_accel_v, cruise_v;
     double effective_accel, effective_decel;
-    double accel_comp;
     int accel_order;
 };
 

@@ -15,7 +15,6 @@ struct qmove {
 
     double cruise_v;
     double move_d;
-    double accel_comp;
 
     struct accel_group accel_group, decel_group, default_accel;
     struct accel_group safe_decel;
@@ -40,7 +39,7 @@ void moveq_reset(struct moveq *mq);
 int moveq_add(struct moveq *mq, double move_d
               , double junction_max_v2, double velocity
               , int accel_order, double accel, double smoothed_accel
-              , double jerk, double min_jerk_limit_time, double accel_comp);
+              , double jerk, double min_jerk_limit_time);
 int moveq_plan(struct moveq *mq, int lazy);
 double moveq_getmove(struct moveq *mq, struct trap_accel_decel *accel_decel);
 

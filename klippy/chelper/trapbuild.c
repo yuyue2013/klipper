@@ -67,21 +67,11 @@ set_accel(struct accel_group* combined, double cruise_v2
     double combined_accel_t = calc_min_accel_time(combined, cruise_v);
     double combined_accel_d = avg_v * combined_accel_t;
     double effective_accel = calc_effective_accel(combined, cruise_v);
-    double accel_comp = combined->move->accel_comp;
-    struct scurve s, s_uncomp;
-    memset(&s, 0, sizeof(s));
+    struct scurve s;
     scurve_fill(&s, combined->accel_order,
             combined_accel_t, 0., combined_accel_t,
-            start_accel_v, effective_accel, accel_comp);
-    if (accel_comp) {
-        // Also compute uncompensated acceleration timings.
-        memset(&s_uncomp, 0, sizeof(s_uncomp));
-        scurve_fill(&s_uncomp, combined->accel_order,
-                combined_accel_t, 0., combined_accel_t,
-                start_accel_v, effective_accel, 0.);
-    }
+            start_accel_v, effective_accel);
     double remaining_accel_t = combined_accel_t;
-    double remaining_uncomp_accel_t = combined_accel_t;
     double remaining_accel_d = combined_accel_d;
     struct accel_group *a = combined->start_accel;
     for (;;) {
@@ -94,33 +84,13 @@ set_accel(struct accel_group* combined, double cruise_v2
             double next_pos = a->accel_d + combined_accel_d - remaining_accel_d;
             if (time_offset_from_start) {
                 a->accel_offset_t = combined_accel_t - remaining_accel_t;
-                a->uncomp_accel_offset_t = combined_accel_t
-                    - remaining_uncomp_accel_t;
-                a->accel_t = scurve_get_time(&s, combined_accel_t, next_pos)
-                    - a->accel_offset_t;
-                if (accel_comp) {
-                    a->uncomp_accel_t = scurve_get_time(&s_uncomp
-                            , combined_accel_t, next_pos)
-                        - a->uncomp_accel_offset_t;
-                } else {
-                    a->uncomp_accel_t = a->accel_t;
-                }
+                a->accel_t = scurve_get_time(&s, next_pos) - a->accel_offset_t;
             } else {
-                a->accel_offset_t = combined_accel_t
-                    - scurve_get_time(&s, combined_accel_t, next_pos);
+                a->accel_offset_t =
+                    combined_accel_t - scurve_get_time(&s, next_pos);
                 a->accel_t = remaining_accel_t - a->accel_offset_t;
-                if (accel_comp) {
-                    a->uncomp_accel_offset_t =
-                        combined_accel_t - scurve_get_time(&s_uncomp
-                                , combined_accel_t, next_pos);
-                } else {
-                    a->uncomp_accel_offset_t = a->accel_offset_t;
-                }
-                a->uncomp_accel_t = remaining_uncomp_accel_t
-                    - a->uncomp_accel_offset_t;
             }
             remaining_accel_t -= a->accel_t;
-            remaining_uncomp_accel_t -= a->uncomp_accel_t;
             remaining_accel_d -= a->move->move_d;
         }
         if (unlikely(a == combined)) break;

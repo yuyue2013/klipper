@@ -25,7 +25,6 @@ class Move:
         self.accel_to_decel = toolhead.max_accel_to_decel
         self.jerk = toolhead.max_jerk
         self.min_jerk_limit_time = toolhead.min_jerk_limit_time
-        self.accel_compensation = toolhead.accel_compensation
         self.timing_callbacks = []
         self.is_kinematic_move = True
         self.axes_d = axes_d = [end_pos[i] - start_pos[i] for i in (0, 1, 2, 3)]
@@ -131,7 +130,7 @@ class MoveQueue:
         ret = self.moveq_add(self.cqueue, move.move_d,
                 move.junction_max_v2, move.velocity,
                 move.accel_order, move.accel, move.accel_to_decel,
-                move.jerk, move.min_jerk_limit_time, move.accel_compensation)
+                move.jerk, move.min_jerk_limit_time)
         if ret:
             raise error('Internal error in moveq_add')
         self.junction_flush -= move.min_move_t
@@ -186,7 +185,6 @@ class ToolHead:
         self.config_max_accel = self.max_accel
         self.config_square_corner_velocity = self.square_corner_velocity
         self.junction_deviation = 0.
-        self.accel_compensation = 0.
         self._calc_junction_deviation()
         # Print time tracking
         self.buffer_time_low = config.getfloat(
@@ -293,12 +291,6 @@ class ToolHead:
                     move.axes_r[0], move.axes_r[1], move.axes_r[2],
                     self.ctrap_accel_decel)
             if move.axes_d[3]:
-                # NB: acceleration compensation reduces duration of moves in
-                # the beginning of acceleration move group, and increases it in
-                # case of deceleration. As a result, extruder moves can be out
-                # of sync with kinematic moves because the extruder kinematics
-                # does not follow acceleration compensation, which extruder
-                # takes care of by adjusting next_move_time accordingly.
                 self.extruder.move(next_move_time, move, self.ctrap_accel_decel)
             next_move_time += total_move_t
             for cb in move.timing_callbacks:
@@ -306,9 +298,6 @@ class ToolHead:
         # Generate steps for moves
         if self.special_queuing_state:
             self._update_drip_move_time(next_move_time)
-        # Since acceleration/deceleration groups of moves are commited
-        # together, extruder and kinematic move times should be in sync
-        # once the whole group of moves is processed.
         self._update_move_time(next_move_time)
         self.last_kin_move_time = next_move_time
     def flush_step_generation(self):
@@ -539,7 +528,6 @@ class ToolHead:
             raise gcode.error(
                     "ACCEL_ORDER = %s is not a valid choice" % (accel_order,))
         self.accel_order = accel_order
-        self.accel_compensation = 0.
         self.max_velocity = min(max_velocity, self.config_max_velocity)
         self.max_accel = min(max_accel, self.config_max_accel)
         self.square_corner_velocity = min(square_corner_velocity,

@@ -48,8 +48,8 @@ class PrinterExtruder:
         # Setup iterative solver
         ffi_main, ffi_lib = chelper.get_ffi()
         self.trapq = ffi_main.gc(ffi_lib.trapq_alloc(), ffi_lib.trapq_free)
+        self.trapq_append = ffi_lib.trapq_append
         self.trapq_free_moves = ffi_lib.trapq_free_moves
-        self.extruder_add_move = ffi_lib.extruder_add_move
         self.sk_extruder = ffi_main.gc(ffi_lib.extruder_stepper_alloc(),
                                        ffi_lib.free)
         self.stepper.set_stepper_kinematics(self.sk_extruder)
@@ -136,8 +136,11 @@ class PrinterExtruder:
         pressure_advance = 0.
         if axis_r > 0. and (move.axes_d[0] or move.axes_d[1]):
             pressure_advance = self.pressure_advance
-        self.extruder_add_move(self.trapq, print_time, move.start_pos[3],
-                               axis_r, pressure_advance, ctrap_accel_decel)
+        # Queue movement (x is extruder movement, y is pressure advance)
+        self.trapq_append(self.trapq, print_time,
+                          move.start_pos[3], 0., 0.,
+                          axis_r, pressure_advance, 0.,
+                          ctrap_accel_decel)
     def cmd_M104(self, params, wait=False):
         # Set Extruder Temperature
         gcode = self.printer.lookup_object('gcode')

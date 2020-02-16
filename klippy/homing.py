@@ -47,9 +47,9 @@ class Homing:
             self.toolhead.signal_drip_mode_end()
     def homing_move(self, movepos, endstops, speed,
                     probe_pos=False, verify_movement=False):
-        # Notify endstops of upcoming home
-        for mcu_endstop, name in endstops:
-            mcu_endstop.home_prepare()
+        # Notify start of homing/probing move
+        self.printer.send_event("homing:homing_move_begin",
+                                [es for es, name in endstops])
         # Note start location
         self.toolhead.flush_step_generation()
         kin = self.toolhead.get_kinematics()
@@ -91,13 +91,13 @@ class Homing:
             self.set_homed_position(kin.calc_tag_position())
         else:
             self.toolhead.set_position(movepos)
-        # Signal homing complete
-        for mcu_endstop, name in endstops:
-            try:
-                mcu_endstop.home_finalize()
-            except CommandError as e:
-                if error is None:
-                    error = str(e)
+        # Signal homing/probing move complete
+        try:
+            self.printer.send_event("homing:homing_move_end",
+                                    [es for es, name in endstops])
+        except CommandError as e:
+            if error is None:
+                error = str(e)
         if error is not None:
             raise CommandError(error)
         # Check if some movement occurred
@@ -109,6 +109,8 @@ class Homing:
                     raise EndstopError(
                         "Endstop %s still triggered after retract" % (name,))
     def home_rails(self, rails, forcepos, movepos):
+        # Notify of upcoming homing operation
+        ret = self.printer.send_event("homing:home_rails_begin", rails)
         # Alter kinematics class to think printer is at forcepos
         homing_axes = [axis for axis in range(3) if forcepos[axis] is not None]
         forcepos = self._fill_coord(forcepos)
@@ -126,7 +128,7 @@ class Homing:
             retract_r = min(1., hi.retract_dist / move_d)
             retractpos = [mp - ad * retract_r
                           for mp, ad in zip(movepos, axes_d)]
-            self.toolhead.move(retractpos, hi.speed)
+            self.toolhead.move(retractpos, hi.retract_speed)
             # Home again
             forcepos = [rp - ad * retract_r
                         for rp, ad in zip(retractpos, axes_d)]
@@ -138,7 +140,7 @@ class Homing:
         kin = self.toolhead.get_kinematics()
         for s in kin.get_steppers():
             s.set_tag_position(s.get_commanded_position())
-        ret = self.printer.send_event("homing:homed_rails", self, rails)
+        ret = self.printer.send_event("homing:home_rails_end", rails)
         if any(ret):
             # Apply any homing offsets
             adjustpos = kin.calc_tag_position()

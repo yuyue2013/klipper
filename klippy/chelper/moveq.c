@@ -383,8 +383,7 @@ moveq_plan(struct moveq *mq, int lazy)
     list_for_each_entry(move, &mq->moves, node)
         ++qsize;
     double flush_endtime = get_monotonic();
-    errorf("lazy = %d, qsize = %d, flush_count = %d, flush_time = %d"
-            , lazy, qsize, flush_count
-            , (int)((flush_endtime-flush_starttime)*1000000));
+    errorf("lazy = %d, qsize = %d, flush_count = %d, flush_time = %.6f"
+            , lazy, qsize, flush_count, flush_endtime-flush_starttime);
     return flush_count;
 }

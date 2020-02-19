@@ -137,3 +137,16 @@ calc_min_safe_dist(const struct accel_group *ag, double cruise_v2)
     return min_dist;
 }
 
+inline double
+calc_max_safe_v2(const struct accel_group *ag)
+{
+    double dist = ag->combined_d;
+    double max_v2 = 2. * ag->max_accel * dist;
+    if (likely(ag->accel_order > 2)) {
+        // It is possible to accelerate from any velocity to this one over the
+        // accumulated distance.
+       double v2 = pow((9./16.) * dist * dist * ag->max_jerk, (2./3.));
+       max_v2 = MIN(max_v2, v2);
+    }
+    return max_v2;
+}

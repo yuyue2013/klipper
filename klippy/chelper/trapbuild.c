@@ -45,6 +45,8 @@ static double
 calc_trap_peak_v2(struct qmove *accel_head, struct qmove *decel_head)
 {
     if (decel_head != accel_head) {
+        if (!decel_head)
+            return accel_head->accel_group.max_end_v2;
         double peak_v2 = MIN(decel_head->decel_group.max_end_v2
                 , decel_head->junction_max_v2);
         if (accel_head)
@@ -130,13 +132,14 @@ set_accel(struct accel_group* combined, double cruise_v2
 
 static void
 set_trap_decel(struct qmove *decel_head, struct list_head *trapezoid
-               , double cruise_v2)
+               , double cruise_v2, double *end_v2)
 {
     struct qmove *m = decel_head;
     while (!list_at_end(m, trapezoid, node)) {
         set_accel(&m->decel_group, cruise_v2, /*time_offset_from_start=*/0);
         m = m->decel_group.start_accel->move;
         cruise_v2 = MIN(cruise_v2, m->decel_group.max_start_v2);
+        *end_v2 = m->decel_group.max_start_v2;
         m = list_next_entry(m, node);
     }
 }
@@ -155,11 +158,13 @@ set_trap_accel(struct qmove *accel_head, struct list_head *trapezoid
 }
 
 struct qmove *
-vtrap_flush(struct vtrap *vt, struct list_node *next_pos)
+vtrap_flush(struct vtrap *vt, struct list_node *next_pos, double *end_v2)
 {
     double peak_cruise_v2 = calc_trap_peak_v2(vt->accel_head, vt->decel_head);
     if (vt->decel_head)
-        set_trap_decel(vt->decel_head, &vt->trapezoid, peak_cruise_v2);
+        set_trap_decel(vt->decel_head, &vt->trapezoid, peak_cruise_v2, end_v2);
+    else
+        *end_v2 = peak_cruise_v2;
     if (vt->accel_head)
         set_trap_accel(vt->accel_head, &vt->trapezoid, peak_cruise_v2);
     return vtrap_clear(vt, next_pos);

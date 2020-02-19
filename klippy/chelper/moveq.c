@@ -21,6 +21,9 @@
 
 static const double EPSILON = 0.000000001;
 
+static const int MAX_QSIZE = 300;
+static const int MIN_FORCED_FLUSH = 100;
+
 static struct qmove *
 qmove_alloc(void)
 {
@@ -133,12 +136,16 @@ backward_smoothed_pass(struct moveq *mq, int lazy, int *ret)
 }
 
 static void
-backward_pass(struct moveq *mq)
+backward_pass(struct moveq *mq, struct qmove *end, double end_v2)
 {
     // Backward pass for full acceleration
-    double junction_max_v2 = 0.;
-    struct qmove *move = NULL;
-    list_for_each_entry_reversed(move, &mq->moves, node) {
+    reset_junctions(&mq->accel_combiner, end_v2);
+    double junction_max_v2 = end_v2;
+    struct qmove *move = (end == NULL
+            ? list_last_entry(&mq->moves, struct qmove, node)
+            : list_prev_entry(end, node));
+    for (; !list_at_end(move, &mq->moves, node);
+            move = list_prev_entry(move, node)) {
         // Restore the default accel and decel values if they were modified
         // on previous backward pass
         move->decel_group = move->accel_group = move->default_accel;
@@ -150,16 +157,16 @@ backward_pass(struct moveq *mq)
 }
 
 static struct qmove *
-compute_safe_flush_limit(struct moveq *mq, int lazy, struct qmove *flush_limit)
+compute_safe_flush_limit(struct moveq *mq, int lazy, struct qmove *end)
 {
-    if (!lazy) return flush_limit;
-    struct qmove *zero_junction_move = NULL;
+    if (!lazy) return end;
+    struct qmove *zero_junction_move = NULL, *flush_limit = end;
     // Go over all moves from the beginning of the queue up to the current
     // flush_limit and check their deceleration paths. Make sure that all
     // flushed moves will have a sufficiently distant junction point on their
     // deceleration path with junction_max_v2 reached, and keep references to
     // such points in safe_decel in case they are needed in a forward pass.
-    for (struct qmove *move = flush_limit;
+    for (struct qmove *move = list_prev_entry(end, node);
             !list_at_end(move, &mq->moves, node);
             move = list_prev_entry(move, node)) {
         if (move->junction_max_v2 < EPSILON) {
@@ -170,7 +177,7 @@ compute_safe_flush_limit(struct moveq *mq, int lazy, struct qmove *flush_limit)
         struct accel_group safe_decel = move->decel_group;
         safe_decel.combined_d = 0.;
         struct qmove *m, *nm = NULL;
-        for (m = move; !list_at_end(m, &mq->moves, node); m = nm) {
+        for (m = move; !list_at_end(m, &mq->moves, node) && m != end; m = nm) {
             safe_decel.combined_d += m->decel_group.combined_d;
             limit_accel(&safe_decel, m->decel_group.max_accel
                     , m->decel_group.max_jerk);
@@ -209,7 +216,7 @@ forward_pass(struct moveq *mq, struct qmove *end, int lazy)
     double start_v2 = mq->prev_end_v2;
     double max_end_v2 = move->decel_group.max_end_v2;
     if (max_end_v2 + EPSILON < start_v2) {
-        errorf("Logic error: impossible to reach the committed v2 = %.3f"
+        errorf("NB: impossible to reach the committed v2 = %.3f"
                 ", max velocity = %.3lf, fallback to suboptimal planning"
                 , start_v2, max_end_v2);
         struct accel_group *decel = &move->decel_group;
@@ -242,7 +249,8 @@ forward_pass(struct moveq *mq, struct qmove *end, int lazy)
             // This move can accelerate
             if (vt.decel_head) {
                 // Complete the previously combined velocity trapezoid
-                last_flushed_move = vtrap_flush(&vt, &move->node);
+                last_flushed_move = vtrap_flush(&vt, &move->node
+                        , &mq->prev_end_v2);
             }
             vtrap_add_as_accel(&vt, move);
         }
@@ -258,21 +266,111 @@ forward_pass(struct moveq *mq, struct qmove *end, int lazy)
             if (move == end) break;
             if (decel->start_accel->max_start_v2 < EPSILON) {
                 // This move comes to a complete stop.
-                last_flushed_move = vtrap_flush(&vt, &next_move->node);
+                last_flushed_move = vtrap_flush(&vt, &next_move->node
+                        , &mq->prev_end_v2);
             }
-            reset_junctions(&mq->accel_combiner, decel->start_accel->max_start_v2);
+            reset_junctions(&mq->accel_combiner
+                    , decel->start_accel->max_start_v2);
         }
         prev_cruise_v2 = move->max_cruise_v2;
     }
     if (!lazy) {
-        if (vt.decel_head)
-            last_flushed_move = vtrap_flush(&vt, &mq->moves.root);
+        struct list_node *next_pos = end == NULL ? &mq->moves.root : &end->node;
+        if (vt.decel_head || vt.accel_head)
+            last_flushed_move = vtrap_flush(&vt, next_pos, &mq->prev_end_v2);
     } else {
         assert(end != NULL);
         // Just put the remaining moves back to mq->moves
         vtrap_clear(&vt, &end->node);
     }
     return last_flushed_move;
+}
+
+static struct qmove *
+find_partial_flush_candidate(struct moveq *mq)
+{
+    struct qmove *move = list_first_entry(&mq->moves, struct qmove, node);
+    double start_v2 = MIN(mq->prev_end_v2, move->decel_group.max_end_v2);
+    reset_junctions(&mq->accel_combiner, start_v2);
+    double prev_cruise_v2 = start_v2;
+    int had_accel = 0, flush_count = 0;
+    // First process MIN_FORCED_FLUSH moves, then find some decelerating move
+    // after acceleration.
+    list_for_each_entry(move, &mq->moves, node) {
+        struct accel_group *accel = &move->accel_group;
+        struct accel_group *decel = &move->decel_group;
+
+        process_next_accel(&mq->accel_combiner, accel
+                , MIN(move->junction_max_v2, prev_cruise_v2));
+        int can_accelerate = decel->max_end_v2 > accel->max_start_v2 + EPSILON;
+        int must_decelerate = accel->max_end_v2 + EPSILON > decel->max_start_v2;
+        if (must_decelerate || !can_accelerate) {
+            if (had_accel)
+                return move;
+            reset_junctions(&mq->accel_combiner
+                    , decel->start_accel->max_start_v2);
+            for (; !list_at_end(move, &mq->moves, node);
+                    move = list_next_entry(move, node)) {
+                if (move == decel->start_accel->move) break;
+                ++flush_count;
+            }
+            move = decel->start_accel->move;
+        }
+        ++flush_count;
+        if (flush_count >= MIN_FORCED_FLUSH)
+            had_accel = had_accel || can_accelerate;
+        prev_cruise_v2 = move->max_cruise_v2;
+    }
+    return NULL;
+}
+
+static double
+calc_partial_flush_end_v2(struct moveq *mq, struct qmove *flush_limit)
+{
+    double max_v2 = MIN(flush_limit->junction_max_v2
+            , flush_limit->decel_group.max_end_v2);
+    if (max_v2 < EPSILON)
+        return max_v2;
+    // Find the 'best' end velocity for flush_limit that still allows safe
+    // deceleration within limits, even if the optimal plan including more moves
+    // will have smaller starting velocity. Since there is no good optimization
+    // strategy, we minimize the average time needed to cover accumulated
+    // distance with the average velocity (max_safe_v2 + 0) / 2.
+    struct accel_group safe_decel = flush_limit->decel_group;
+    safe_decel.combined_d = 0.;
+    double best_time = -1.0, end_v2 = 0.;
+    struct qmove *m, *nm = NULL;
+    for (m = flush_limit; !list_at_end(m, &mq->moves, node); m = nm) {
+        safe_decel.combined_d += m->decel_group.combined_d;
+        limit_accel(&safe_decel, m->decel_group.max_accel
+                , m->decel_group.max_jerk);
+        // If flush_limit velocity is max_safe_v2, it is possible to decelerate
+        // to any velocity over safe_decel.combined_d distance.
+        double max_safe_v2 = calc_max_safe_v2(&safe_decel);
+        max_safe_v2 = MIN(max_safe_v2, max_v2);
+        double time = 2. * safe_decel.combined_d / max_safe_v2;
+        struct accel_group *start_decel = m->decel_group.start_accel;
+        if (best_time < 0 || best_time > time + EPSILON) {
+            flush_limit->safe_decel = safe_decel;
+            flush_limit->safe_decel.move = flush_limit;
+            flush_limit->safe_decel.start_accel = start_decel;
+            best_time = time;
+            end_v2 = max_safe_v2;
+        }
+        nm = list_next_entry(start_decel->move, node);
+    }
+    return end_v2;
+}
+
+static struct qmove *
+force_partial_flush(struct moveq *mq)
+{
+    struct qmove *flush_limit = find_partial_flush_candidate(mq);
+    if (flush_limit == NULL)
+        return flush_limit;
+    double end_v2 = calc_partial_flush_end_v2(mq, flush_limit);
+    backward_pass(mq, flush_limit, end_v2);
+    return forward_pass(mq, flush_limit, /*lazy=*/0);
 }
 
 int __visible
@@ -383,26 +481,30 @@ moveq_plan(struct moveq *mq, int lazy)
     if (list_empty(&mq->moves))
         return 0;
     double flush_starttime = get_monotonic();
+    int qsize = 0;
+    struct qmove *move = NULL;
+    list_for_each_entry(move, &mq->moves, node)
+        ++qsize;
     int ret;
     struct qmove *flush_limit = backward_smoothed_pass(mq, lazy, &ret);
     if (ret) return ret;
     if (lazy && !flush_limit)
         return 0;
-    backward_pass(mq);
+    backward_pass(mq, flush_limit, /*end_v2=*/0.);
     flush_limit = compute_safe_flush_limit(mq, lazy, flush_limit);
     struct qmove *last_flushed_move = forward_pass(mq, flush_limit, lazy);
+    if (!last_flushed_move && qsize >= MAX_QSIZE) {
+        // Queue grew too large, switching to potentialy suboptimal planning
+        // to force some moves to be flushed.
+        last_flushed_move = force_partial_flush(mq);
+    }
     if (!last_flushed_move)
         return 0;
-    mq->prev_end_v2 = last_flushed_move->decel_group.max_start_v2;
-    struct qmove *move = NULL;
     int flush_count = 0;
     list_for_each_entry(move, &mq->moves, node) {
         ++flush_count;
         if (move == last_flushed_move) break;
     }
-    int qsize = 0;
-    list_for_each_entry(move, &mq->moves, node)
-        ++qsize;
     double flush_endtime = get_monotonic();
     errorf("lazy = %d, qsize = %d, flush_count = %d, flush_time = %.6f"
             , lazy, qsize, flush_count, flush_endtime-flush_starttime);

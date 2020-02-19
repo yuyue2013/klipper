@@ -153,6 +153,7 @@ static struct qmove *
 compute_safe_flush_limit(struct moveq *mq, int lazy, struct qmove *flush_limit)
 {
     if (!lazy) return flush_limit;
+    struct qmove *zero_junction_move = NULL;
     // Go over all moves from the beginning of the queue up to the current
     // flush_limit and check their deceleration paths. Make sure that all
     // flushed moves will have a sufficiently distant junction point on their
@@ -161,6 +162,11 @@ compute_safe_flush_limit(struct moveq *mq, int lazy, struct qmove *flush_limit)
     for (struct qmove *move = flush_limit;
             !list_at_end(move, &mq->moves, node);
             move = list_prev_entry(move, node)) {
+        if (move->junction_max_v2 < EPSILON) {
+            if (zero_junction_move == NULL)
+                zero_junction_move = move;
+            continue;
+        }
         struct accel_group safe_decel = move->decel_group;
         safe_decel.combined_d = 0.;
         struct qmove *m, *nm = NULL;
@@ -182,6 +188,9 @@ compute_safe_flush_limit(struct moveq *mq, int lazy, struct qmove *flush_limit)
             }
         }
         if (list_at_end(m, &mq->moves, node)) {
+            // It is always safe to flush a move that comes to a complete stop.
+            if (zero_junction_move != NULL)
+                return zero_junction_move;
             // The current 'move' does not have a junction point on its
             // deceleration path where junction_max_v2 is reached farther
             // than the minimum safe distance. This means that this move can
@@ -247,6 +256,10 @@ forward_pass(struct moveq *mq, struct qmove *end, int lazy)
                 if (move == decel->start_accel->move) break;
             }
             if (move == end) break;
+            if (decel->start_accel->max_start_v2 < EPSILON) {
+                // This move comes to a complete stop.
+                last_flushed_move = vtrap_flush(&vt, &next_move->node);
+            }
             reset_junctions(&mq->accel_combiner, decel->start_accel->max_start_v2);
         }
         prev_cruise_v2 = move->max_cruise_v2;

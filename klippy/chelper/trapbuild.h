@@ -11,7 +11,8 @@ struct vtrap {
 };
 
 void vtrap_init(struct vtrap *vt);
-struct qmove * vtrap_flush(struct vtrap *vt, struct list_node *next_pos);
+struct qmove * vtrap_flush(struct vtrap *vt, struct list_node *next_pos
+                           , double *end_v2);
 struct qmove * vtrap_clear(struct vtrap *vt, struct list_node *next_pos);
 void vtrap_add_as_accel(struct vtrap *vt, struct qmove *move);
 void vtrap_add_as_decel(struct vtrap *vt, struct qmove *move);

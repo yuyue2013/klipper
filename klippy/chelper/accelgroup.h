@@ -27,5 +27,6 @@ double calc_effective_accel(const struct accel_group *ag, double cruise_v);
 double calc_min_accel_time(const struct accel_group *ag, double cruise_v);
 double calc_min_accel_dist(const struct accel_group *ag, double cruise_v);
 double calc_min_safe_dist(const struct accel_group *ag, double cruise_v2);
+double calc_max_safe_v2(const struct accel_group *ag);
 
 #endif  // accelgroup.h

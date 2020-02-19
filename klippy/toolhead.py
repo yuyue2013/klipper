@@ -93,6 +93,7 @@ class MoveQueue:
         self.toolhead = toolhead
         self.queue = []
         self.junction_flush = LOOKAHEAD_FLUSH_TIME
+        self.last_step_gen_time = self.toolhead.reactor.monotonic()
         ffi_lib = toolhead.ffi_lib
         self.cqueue = toolhead.ffi_main.gc(ffi_lib.moveq_alloc(), ffi_lib.free)
         self.moveq_add = ffi_lib.moveq_add
@@ -103,6 +104,7 @@ class MoveQueue:
         del self.queue[:]
         self.moveq_reset(self.cqueue)
         self.junction_flush = LOOKAHEAD_FLUSH_TIME
+        self.last_step_gen_time = self.toolhead.reactor.monotonic()
     def set_flush_time(self, flush_time):
         self.junction_flush = flush_time
     def get_last(self):
@@ -115,10 +117,19 @@ class MoveQueue:
         flush_count = self.moveq_plan(self.cqueue, lazy)
         if flush_count < 0:
             raise error('Internal error in moveq_plan')
-        # Generate step times for all moves ready to be flushed
-        self.toolhead._process_moves(queue[:flush_count])
-        # Remove processed moves from the queue
-        del queue[:flush_count]
+        if flush_count:
+            # Generate step times for all moves ready to be flushed
+            start_process_moves = self.toolhead.reactor.monotonic()
+            self.toolhead._process_moves(queue[:flush_count])
+            end_process_moves = self.toolhead.reactor.monotonic()
+            # Remove processed moves from the queue
+            del queue[:flush_count]
+            next_step_gen_time = self.toolhead.reactor.monotonic()
+            logging.info('moveq_flush: time between step gen = %.6f,'
+                         ' process_moves time = %.6f',
+                         next_step_gen_time - self.last_step_gen_time,
+                         end_process_moves - start_process_moves)
+            self.last_step_gen_time = next_step_gen_time
     def get_next_accel_decel(self, ctrap_accel_decel):
         total_move_t = self.moveq_getmove(self.cqueue, ctrap_accel_decel)
         if total_move_t < 0:

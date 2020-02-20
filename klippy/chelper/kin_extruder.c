@@ -27,32 +27,29 @@
 //         / ((smooth_time/2)**2))
 
 // Calculate the definitive integral of the motion formula:
-//   position(t) = base + s(t) + pa * s'(t), with s(t) - Bezier S-Curve
+//   position(t) = extrude_pos + s(t), with s(t) - Bezier S-Curve
 static double
-extruder_integrate(struct move *m, double start, double end)
+extruder_integrate(double extrude_pos, const struct scurve *s
+                   , double start, double end)
 {
     // Calculate base position and velocity with pressure advance
-    double pressure_advance = m->axes_r.y;
-    double pa_add = pressure_advance * scurve_diff(&m->s, start, end);
-    double base = m->start_pos.x * (end - start);
-    double integral = scurve_integrate(&m->s, start, end);
-    double extrude_r = m->axes_r.x;
-    return base + extrude_r * (integral + pa_add);
+    double base = extrude_pos * (end - start);
+    double integral = scurve_tn_antiderivative(s, 0, end)
+        - scurve_tn_antiderivative(s, 0, start);
+    return base + integral;
 }
 
 // Calculate the definitive integral of time weighted position:
-//   weighted_position(t) = t * (base + s(t) + pa * s'(t))
+//   weighted_position(t) = t * (extrude_pos + s(t))
 static double
-extruder_integrate_time(struct move *m, double start, double end)
+extruder_integrate_time(double extrude_pos, const struct scurve *s
+                        , double start, double end)
 {
     // Calculate base position and velocity with pressure advance
-    double pressure_advance = m->axes_r.y;
-    double pa_add = pressure_advance
-        * scurve_deriv_t_integrate(&m->s, start, end);
-    double base = .5 * m->start_pos.x * (end * end - start * start);
-    double integral = scurve_integrate_t(&m->s, start, end);
-    double extrude_r = m->axes_r.x;
-    return base + extrude_r * (integral + pa_add);
+    double base = .5 * extrude_pos * (end * end - start * start);
+    double integral = scurve_tn_antiderivative(s, 1, end)
+        - scurve_tn_antiderivative(s, 1, start);
+    return base + integral;
 }
 
 // Calculate the definitive integral of extruder for a given move
@@ -63,8 +60,14 @@ pa_move_integrate(struct move *m, double start, double end, double time_offset)
         start = 0.;
     if (end > m->move_t)
         end = m->move_t;
-    double iext = extruder_integrate(m, start, end);
-    double wgt_ext = extruder_integrate_time(m, start, end);
+    double extrude_pos = m->start_pos.x;
+    double extrude_r = m->axes_r.x;
+    double pressure_advance = m->axes_r.y;
+    struct scurve s;
+    scurve_copy_scaled(&m->s, extrude_r, &s);
+    extrude_pos += scurve_add_deriv(&m->s, extrude_r * pressure_advance, &s);
+    double iext = extruder_integrate(extrude_pos, &s, start, end);
+    double wgt_ext = extruder_integrate_time(extrude_pos, &s, start, end);
     return wgt_ext - time_offset * iext;
 }
 
@@ -105,7 +108,7 @@ extruder_calc_position(struct stepper_kinematics *sk, struct move *m
     double hst = es->half_smooth_time;
     if (!hst)
         // Pressure advance not enabled
-        return m->start_pos.x + move_get_distance(m, move_time);
+        return m->start_pos.x + m->axes_r.x * move_get_distance(m, move_time);
     // Apply pressure advance and average over smooth_time
     double area = pa_range_integrate(m, move_time, hst);
     return area * es->inv_half_smooth_time2;

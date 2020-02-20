@@ -11,6 +11,7 @@
 #include "compiler.h" // likely
 #include "scurve.h" // scurve
 
+// Find the distance travel on an S-Curve
 double
 scurve_eval(const struct scurve *s, double time)
 {
@@ -21,6 +22,18 @@ scurve_eval(const struct scurve *s, double time)
     v = s->c2 + v * time;
     v = s->c1 + v * time;
     return v * time;
+}
+
+double
+scurve_velocity(const struct scurve *s, double time)
+{
+    double v = 6. * s->c6;
+    v = 5. * s->c5 + v * time;
+    v = 4. * s->c4 + v * time;
+    v = 3. * s->c3 + v * time;
+    v = 2. * s->c2 + v * time;
+    v = s->c1 + v * time;
+    return v;
 }
 
 static void
@@ -84,125 +97,6 @@ double scurve_get_time(const struct scurve *s, double distance)
     return (high + low) * .5;
 }
 
-// Compute Bezier curve difference between end and start: s(end) - s(start)
-double
-scurve_diff(struct scurve *s, double start, double end)
-{
-    double mid = (start + end) * 0.5;
-    double h = end - start;
-    double h2 = h * h;
-
-    double a6 = s->c6;
-    double a5 = s->c5;
-    double a4 = s->c4;
-    double a3 = s->c3;
-    double a2 = s->c2;
-    double a1 = s->c1;
-
-    double v = 6. * a6;
-    v = 5. * a5 + v * mid;
-    a6 *= h2;
-    v = 4. * a4 + 5. * a6 + v * mid;
-    a5 *= h2;
-    v = 3. * a3 + (5./2.) * a5 + v * mid;
-    v = 2. * a2 + h2 * (a4 + (3./8.) * a6) + v * mid;
-    v = a1 + h2 * (0.25 * a3 + (1./16.) * a5) + v * mid;
-    return v * h;
-}
-
-// Compute integral of Bezier curve derivative times t:
-// integral(s'(t) * t, t = start..end)
-double
-scurve_deriv_t_integrate(struct scurve *s, double start, double end)
-{
-    double mid = (start + end) * 0.5;
-    double h = end - start;
-    double h2 = h * h;
-
-    double a6 = s->c6;
-    double a5 = s->c5;
-    double a4 = s->c4;
-    double a3 = s->c3;
-    double a2 = s->c2;
-    double a1 = s->c1;
-
-    double v = 6. * a6;
-    v = 5. * a5 + v * mid;
-    a6 *= h2;
-    v = 4. * a4 + 7.5 * a6 + v * mid;
-    a5 *= h2;
-    v = 3. * a3 + (25./6.) * a5 + v * mid;
-    a4 *= h2;
-    a6 *= h2;
-    v = 2. * a2 + 2. * a4 + (9./8.) * a6 + v * mid;
-    v = a1 + h2 * (0.75 * a3 + (5./16.) * a5) + v * mid;
-    v = h2 * ((1./6.) * a2 + (1./20.) * a4 + (3./224.) * a6) + v * mid;
-    return v * h;
-}
-
-// Integrate Bezier curve over (start; end) interval:
-// integral(s(t), t = start..end)
-double
-scurve_integrate(struct scurve *s, double start, double end)
-{
-    double mid = (start + end) * 0.5;
-    double h = end - start;
-    double h2 = h * h;
-
-    double a6 = s->c6;
-    double a5 = s->c5;
-    double a4 = s->c4;
-    double a3 = s->c3;
-    double a2 = s->c2;
-    double a1 = s->c1;
-
-    double v = a6;
-    v = a5 + v * mid;
-    a6 *= h2;
-    v = a4 + (5./4.) * a6 + v * mid;
-    a5 *= h2;
-    v = a3 + (5./6.) * a5 + v * mid;
-    a4 *= h2;
-    a6 *= h2;
-    v = a2 + 0.5 * a4 + (3./16.) * a6 + v * mid;
-    v = a1 + h2 * (0.25 * a3 + (1./16.) * a5) + v * mid;
-    v = h2 * ((1./12.) * a2 + (1./80.) * a4 + (1./448.) * a6) + v * mid;
-    return v * h;
-}
-
-// Integrate Bezier curve times t over (start; end) interval:
-// integral(s(t) * t, t = start..end)
-double
-scurve_integrate_t(struct scurve *s, double start, double end)
-{
-    double mid = (start + end) * 0.5;
-    double h = end - start;
-    double h2 = h * h;
-
-    double a6 = s->c6;
-    double a5 = s->c5;
-    double a4 = s->c4;
-    double a3 = s->c3;
-    double a2 = s->c2;
-    double a1 = s->c1;
-
-    double v = a6;
-    v = a5 + v * mid;
-    a6 *= h2;
-    v = a4 + (7./4.) * a6 + v * mid;
-    a5 *= h2;
-    v = a3 + (5./4.) * a5 + v * mid;
-    a4 *= h2;
-    a6 *= h2;
-    v = a2 + (5./6.) * a4 + (7./16.) * a6 + v * mid;
-    a3 *= h2;
-    a5 *= h2;
-    v = a1 + 0.5 * a3 + (3./16.) * a5 + v * mid;
-    v = h2 * (0.25 * a2 + (1./16.) * a4 + (1./64.) * a6) + v * mid;
-    v = h2 * ((1./12.) * a1 + (1./80.) * a3 + (1./448.) * a5) + v * mid;
-    return v * h;
-}
-
 void
 scurve_fill(struct scurve *s, int accel_order
             , double accel_t, double accel_offset_t, double total_accel_t
@@ -233,4 +127,58 @@ scurve_offset(struct scurve *s, double offset_t)
                 + 10. * s->c5) * offset_t + 4. * s->c4) * offset_t;
     s->c4 += (15. * s->c6 * offset_t + 5. * s->c5) * offset_t;
     s->c5 += 6. * s->c6 * offset_t;
+}
+
+void
+scurve_copy_scaled(const struct scurve *src, double ratio, struct scurve *dst)
+{
+    dst->total_accel_t = src->total_accel_t;
+
+    dst->c6 = src->c6 * ratio;
+    dst->c5 = src->c5 * ratio;
+    dst->c4 = src->c4 * ratio;
+    dst->c3 = src->c3 * ratio;
+    dst->c2 = src->c2 * ratio;
+    dst->c1 = src->c1 * ratio;
+}
+
+double
+scurve_add_deriv(const struct scurve *src, double ratio, struct scurve *dst)
+{
+    dst->c5 += 6. * src->c6 * ratio;
+    dst->c4 += 5. * src->c5 * ratio;
+    dst->c3 += 4. * src->c4 * ratio;
+    dst->c2 += 3. * src->c3 * ratio;
+    dst->c1 += 2. * src->c2 * ratio;
+    return src->c1 * ratio;
+}
+
+double
+scurve_add_2nd_deriv(const struct scurve *src, double ratio, struct scurve *dst)
+{
+    dst->c4 += 30. * src->c6 * ratio;
+    dst->c3 += 20. * src->c5 * ratio;
+    dst->c2 += 12. * src->c4 * ratio;
+    dst->c1 += 6. * src->c3 * ratio;
+    return 2. * src->c2 * ratio;
+}
+
+static const double scurve_antideriv_coeffs[] = {
+    1./1., 1./2., 1./3., 1./4., 1./5., 1./6., 1./7., 1./8., 1./9., 1./10.,
+    1./11., 1./12., 1./13., 1./14., 1./15.,
+};
+
+double
+scurve_tn_antiderivative(const struct scurve *s, int n, double time)
+{
+    const double *coeffs = scurve_antideriv_coeffs + n;
+    double v = s->c6 * coeffs[6];
+    v = s->c5 * coeffs[5] + v * time;
+    v = s->c4 * coeffs[4] + v * time;
+    v = s->c3 * coeffs[3] + v * time;
+    v = s->c2 * coeffs[2] + v * time;
+    v = s->c1 * coeffs[1] + v * time;
+    for (; likely(n >= 0); --n)
+        v *= time;
+    return v * time;
 }

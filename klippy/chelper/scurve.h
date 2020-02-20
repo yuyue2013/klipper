@@ -6,17 +6,17 @@ struct scurve {
     double total_accel_t;
 };
 
-// Find the distance travel on an S-Curve
 double scurve_eval(const struct scurve *s, double time);
+double scurve_velocity(const struct scurve *s, double time);
+double scurve_tn_antiderivative(const struct scurve *s, int n, double time);
 
 void scurve_offset(struct scurve *s, double offset_t);
+void scurve_copy_scaled(const struct scurve *src, double ratio, struct scurve *dst);
+double scurve_add_deriv(const struct scurve *src, double ratio, struct scurve *dst);
+double scurve_add_2nd_deriv(const struct scurve *src, double ratio, struct scurve *dst);
 void scurve_fill(struct scurve *s, int accel_order
         , double accel_t, double accel_offset_t, double total_accel_t
         , double start_accel_v, double effective_accel);
 double scurve_get_time(const struct scurve *s, double distance);
-double scurve_diff(struct scurve *s, double start, double end);
-double scurve_deriv_t_integrate(struct scurve *s, double start, double end);
-double scurve_integrate(struct scurve *s, double start, double end);
-double scurve_integrate_t(struct scurve *s, double start, double end);
 
 #endif // scurve.h

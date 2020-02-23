@@ -132,7 +132,8 @@ the prints.
 
 ## Tuning process
 
-Prepare the [test](https://www.thingiverse.com/thing:3847206) model in the slicer:
+Prepare the ringing test model in the slicer, which can be found in
+[docs/prints/ringing_tower.stl](prints/ringing_tower.stl):
 
  * Suggested layer height is 0.2 or 0.25 mm.
  * Infill and top layers can be set to 0.
@@ -142,25 +143,38 @@ Prepare the [test](https://www.thingiverse.com/thing:3847206) model in the slice
 
 ### Ringing frequency
 
-First, measure the **ringing frequency**. For best results, this should be
-done with acceleration_order = 2 and high acceleration.
+First, measure the **ringing frequency**. Note that these measurements can also
+be done on the mainline Klipper branch before switching to S-Curve branch.
 
-1. Start with the following command `SET_VELOCITY_LIMIT ACCEL_ORDER=2`.
-2. Print the test model sliced with suggested parameters.
-3. If the ringing is poorly visible, try increasing acceleration with
-   `SET_VELOCITY_LIMIT ACCEL=3000` or higher. Basically, you need to *decrease*
-   the quality of the print.
-4. Measure the distance *D* (in mm) between *N* oscillations along X axis near
-   the notches, preferably skipping the first oscillation or two. To measure
-   the distance between oscillations more easily, mark the oscillations first,
-   then measure the distance between the marks with a ruler or calipers:
+1. Increase `max_accel` parameter in your `printer.cfg` to 7000.
+2. Restart the firmware: `RESTART`.
+3. Disable Pressure Advance: `SET_PRESSURE_ADVANCE ADVANCE=0`.
+4. If you have already switched to the S-Curve branch, execute
+   `SET_VELOCITY_LIMIT ACCEL_ORDER=2` command.
+5. Execute the command
+   `TUNING_TOWER COMMAND=SET_VELOCITY_LIMIT PARAMETER=ACCEL START=1250 FACTOR=100 BAND=5`.
+   Basically, we try to make ringing more pronounced by setting different high
+   acceleration values.
+6. Print the test model sliced with suggested parameters.
+7. You can stop the print earlier if the ringing is clearly visible and you see
+   that acceleration gets too high for your printer.
+8. Measure the distance *D* (in mm) between *N* oscillations for X axis near
+   the notches, preferably skipping the first oscillation or two. Pay attention
+   to the notches X axis corresponds to - the test model has large 'X' and 'Y'
+   marks on the back side for convenience. To measure the distance between
+   oscillations more easily, mark the oscillations first, then measure the
+   distance between the marks with a ruler or calipers:
 
     |![Mark ringing](img/ringing-mark.jpg)|![Measure ringing](img/ringing-measure.jpg)|
     |:--:|:--:|
 
-5. Compute the ringing frequency = *V* &middot; *N* / *D* (Hz) where *V* is
-   the velocity for outer perimeters (mm/sec).
-6. Do (4) - (5) for Y axis as well.
+9. Compute the ringing frequency = *V* &middot; *N* / *D* (Hz) where *V* is the
+   velocity for outer perimeters (mm/sec). For the example above, we marked 6
+   oscillations, and it was printed at 100 mm/sec, velocity, so the frequency is
+   100 * 6 / 12.14 ~= 49.4 Hz.
+10. Do (8) - (9) for Y axis as well.
+11. You can restore the original `max_accel` value in your `printer.cfg` and
+    restart your printer.
 
 For Cartesian printers, you will obtain 2 frequencies, which may be different,
 esepcially on bed-slinger printers. For CoreXY printers, repeat the process

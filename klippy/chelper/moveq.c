@@ -320,14 +320,17 @@ calc_partial_flush_end_v2(struct moveq *mq, struct qmove *flush_limit
             , flush_limit->decel_group.max_end_v2);
     if (max_v2 < EPSILON)
         return max_v2;
+    double max_v = sqrt(max_v2);
     // Find the 'best' end velocity for flush_limit that still allows safe
     // deceleration within limits, even if the optimal plan including more moves
     // will have smaller starting velocity. Since there is no good optimization
-    // strategy, we minimize the average time needed to cover accumulated
-    // distance with the average velocity (max_safe_v2 + 0) / 2.
+    // strategy, we minimize the difference between the time needed to cover
+    // accumulated distance decelerating from the safe velocity and from the
+    // maximum velocity.
     struct accel_group safe_decel = flush_limit->decel_group;
+    safe_decel.start_accel = &safe_decel;
     safe_decel.combined_d = 0.;
-    double best_time = -1.0, end_v2 = 0.;
+    double best_time = -1.0, end_v2 = 0., start_v2 = max_v2;
     struct qmove *m = flush_limit, *nm = NULL;
     for (; !list_at_end(m, &mq->moves, node) && m != end; m = nm) {
         safe_decel.combined_d += m->decel_group.combined_d;
@@ -337,8 +340,16 @@ calc_partial_flush_end_v2(struct moveq *mq, struct qmove *flush_limit
         // to any velocity over safe_decel.combined_d distance.
         double max_safe_v2 = calc_max_safe_v2(&safe_decel);
         max_safe_v2 = MIN(max_safe_v2, max_v2);
-        double time = 2. * safe_decel.combined_d / max_safe_v2;
+
+        // Still we use known max_start_v2 for time estimation as start velocity
+        // instead of just 0 velocity in the worst case.
         struct accel_group *start_decel = m->decel_group.start_accel;
+        start_v2 = MIN(start_v2, start_decel->max_start_v2);
+        set_max_start_v2(&safe_decel, start_v2);
+
+        double safe_t = calc_min_accel_group_time(&safe_decel, sqrt(max_safe_v2));
+        double min_t = calc_min_accel_group_time(&safe_decel, max_v);
+        double time = safe_t - min_t;
         if (best_time < 0 || best_time > time + EPSILON) {
             flush_limit->safe_decel = safe_decel;
             flush_limit->safe_decel.move = flush_limit;
@@ -346,6 +357,8 @@ calc_partial_flush_end_v2(struct moveq *mq, struct qmove *flush_limit
             best_time = time;
             end_v2 = max_safe_v2;
         }
+        if (start_v2 < EPSILON || best_time < EPSILON)
+            break;
         nm = list_next_entry(start_decel->move, node);
     }
     return end_v2;

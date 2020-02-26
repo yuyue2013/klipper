@@ -150,3 +150,18 @@ calc_max_safe_v2(const struct accel_group *ag)
     }
     return max_v2;
 }
+
+inline double
+calc_min_accel_group_time(const struct accel_group *ag, double cruise_v)
+{
+    if (ag->start_accel->max_start_v >= cruise_v)
+        // No acceleration possible - just cruising
+        return ag->combined_d / cruise_v;
+
+    double start_v = ag->start_accel->max_start_v;
+    double accel_t = calc_min_accel_time(ag, cruise_v);
+    double accel_d = (start_v + cruise_v) * 0.5 * accel_t;
+    double cruise_t = (ag->combined_d - accel_d) / cruise_v;
+
+    return accel_t + cruise_t;
+}

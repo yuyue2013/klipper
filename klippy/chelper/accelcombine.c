@@ -112,17 +112,7 @@ limit_accel_jps(struct accel_combiner *ac, struct accel_group *new_ag
 inline static void
 calc_min_accel_end_time(struct junction_point *jp, double cruise_v2)
 {
-    if (jp->accel.start_accel->max_start_v2 >= cruise_v2) {
-        // No acceleration possible - just cruising
-        jp->min_end_time = jp->accel.combined_d / cruise_v2;
-    } else {
-        double start_v = jp->accel.start_accel->max_start_v;
-        double cruise_v = sqrt(cruise_v2);
-        double accel_t = calc_min_accel_time(&jp->accel, cruise_v);
-        double accel_d = (start_v + cruise_v) * 0.5 * accel_t;
-        double cruise_t = (jp->accel.combined_d - accel_d) / cruise_v;
-        jp->min_end_time = accel_t + cruise_t;
-    }
+    jp->min_end_time = calc_min_accel_group_time(&jp->accel, sqrt(cruise_v2));
     jp->min_end_time += jp->min_start_time;
 }
 

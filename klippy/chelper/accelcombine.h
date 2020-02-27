@@ -7,7 +7,7 @@ struct accel_group;
 
 struct accel_combiner {
     struct list_head junctions;
-    double junct_start_v2;
+    double junct_start_v2, min_end_time;
 };
 
 void init_combiner(struct accel_combiner *ac);

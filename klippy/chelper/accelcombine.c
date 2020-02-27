@@ -14,13 +14,15 @@
 #include "compiler.h" // likely
 #include "moveq.h" // qmove
 
+static const double EPSILON = 0.000000001;
+
 struct junction_point {
     struct list_node node;
     // Combined acceleration limits that must be respected
     // from this junction point
     struct accel_group accel;
     struct accel_group *move_ag;
-    double min_start_time, min_end_time;
+    double min_start_time;
 };
 
 void
@@ -33,6 +35,7 @@ reset_junctions(struct accel_combiner *ac, double start_v2)
         free(jp);
     }
     ac->junct_start_v2 = start_v2;
+    ac->min_end_time = 0;
 }
 
 struct junction_point *
@@ -52,7 +55,7 @@ create_junction_point(struct accel_combiner *ac, struct accel_group *ag
         prev_accel = prev_jp->move_ag;
         start_v2 = MIN(start_v2
                 , MIN(prev_accel->max_end_v2, prev_accel->move->max_cruise_v2));
-        new_jp->min_start_time = prev_jp->min_end_time;
+        new_jp->min_start_time = ac->min_end_time;
     } else {
         start_v2 = MIN(start_v2, ac->junct_start_v2);
     }
@@ -81,7 +84,7 @@ drop_decelerating_jps(struct accel_combiner *ac, double accel_limit_v2)
     while (likely(!list_empty(&ac->junctions))) {
         struct junction_point *last_jp = list_last_entry(
                 &ac->junctions, struct junction_point, node);
-        if (unlikely(last_jp->accel.max_start_v2 + 0.000000001
+        if (unlikely(last_jp->accel.max_start_v2 + EPSILON
                     < accel_limit_v2)) {
             // First point from which acceleration is possible
             return;
@@ -108,11 +111,11 @@ limit_accel_jps(struct accel_combiner *ac, struct accel_group *new_ag
     }
 }
 
-inline static void
+inline static double
 calc_min_accel_end_time(struct junction_point *jp, double cruise_v2)
 {
-    jp->min_end_time = calc_min_accel_group_time(&jp->accel, sqrt(cruise_v2));
-    jp->min_end_time += jp->min_start_time;
+    return jp->min_start_time
+        + calc_min_accel_group_time(&jp->accel, sqrt(cruise_v2));
 }
 
 static struct junction_point *
@@ -120,14 +123,19 @@ calc_best_jp(struct accel_combiner *ac, struct accel_group *new_ag)
 {
     double max_cruise_v2 = new_ag->move->max_cruise_v2;
     struct junction_point *jp = NULL, *best_jp = NULL;
+    double min_end_time = -1.;
     list_for_each_entry(jp, &ac->junctions, node) {
         // Choose the best acceleration option
         jp->accel.combined_d += new_ag->move->move_d;
         jp->accel.max_end_v2 = calc_max_v2(&jp->accel);
-        calc_min_accel_end_time(jp, MIN(jp->accel.max_end_v2, max_cruise_v2));
-        if (!best_jp || best_jp->min_end_time > jp->min_end_time)
+        double end_time = calc_min_accel_end_time(
+                jp, MIN(jp->accel.max_end_v2, max_cruise_v2));
+        if (!best_jp || min_end_time > end_time + EPSILON) {
             best_jp = jp;
+            min_end_time = end_time;
+        }
     }
+    ac->min_end_time = min_end_time;
     assert(best_jp);
     return best_jp;
 }
@@ -163,6 +171,7 @@ init_combiner(struct accel_combiner *ac)
 {
     list_init(&ac->junctions);
     ac->junct_start_v2 = 0;
+    ac->min_end_time = 0;
 }
 
 void

@@ -97,14 +97,12 @@ drop_decelerating_jps(struct accel_combiner *ac, double accel_limit_v2)
 
 static void
 limit_accel_jps(struct accel_combiner *ac, struct accel_group *new_ag
-                , double junction_accel_limit_v2)
+                , double junction_max_v2)
 {
     struct junction_point *jp = NULL;
     list_for_each_entry(jp, &ac->junctions, node) {
         // Make sure to not exceed junction_max_v2 during acceleration
-        // During S-Curve acceleration, the actual speed can overshoot
-        // (start_v + accel * t) by (accel * t / (6 * sqrt(3)))
-        double junction_accel_limit = 0.5 * (junction_accel_limit_v2
+        double junction_accel_limit = 0.5 * (junction_max_v2
                 - jp->accel.max_start_v2) / jp->accel.combined_d;
         limit_accel(&jp->accel, MIN(junction_accel_limit, new_ag->max_accel)
                 , new_ag->max_jerk);
@@ -150,9 +148,8 @@ process_next_accel(struct accel_combiner *ac, struct accel_group *ag
     if (unlikely(!check_can_combine(ac, new_jp)))
         reset_junctions(ac, start_v2);
 
-    double junction_accel_limit_v2 = junction_max_v2 * (53. / 54.);
-    drop_decelerating_jps(ac, MIN(start_v2, junction_accel_limit_v2));
-    limit_accel_jps(ac, ag, junction_accel_limit_v2);
+    drop_decelerating_jps(ac, MIN(start_v2, junction_max_v2));
+    limit_accel_jps(ac, ag, junction_max_v2);
 
     // Add the current move to the list (with combined_d == 0)
     list_add_tail(&new_jp->node, &ac->junctions);

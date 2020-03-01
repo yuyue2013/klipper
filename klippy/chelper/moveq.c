@@ -19,6 +19,8 @@
 #include "trapq.h" // trap_accel_decel
 #include "trapbuild.h"
 
+#define MOVE_DEBUG 0
+
 static const double EPSILON = 0.000000001;
 
 static const int MAX_QSIZE = 300;
@@ -438,22 +440,39 @@ moveq_getmove(struct moveq *mq, struct trap_accel_decel *accel_decel)
     double cruise_d = move->move_d - accel->accel_d - decel->accel_d;
     accel_decel->cruise_t = cruise_d / move->cruise_v;
     // Only used to track smootheness, can be deleted
+    struct scurve s_acc, s_dec;
+    scurve_fill(&s_acc, accel_decel->accel_order, accel_decel->accel_t,
+            accel_decel->accel_offset_t, accel_decel->total_accel_t,
+            accel_decel->start_accel_v, accel_decel->effective_accel,
+            accel_decel->accel_comp);
+    scurve_fill(&s_dec, accel_decel->accel_order, accel_decel->decel_t,
+            accel_decel->decel_offset_t, accel_decel->total_decel_t,
+            accel_decel->cruise_v, -accel_decel->effective_decel,
+            accel_decel->accel_comp);
     double start_v, end_v;
-    if (accel_decel->accel_t)
-        start_v = accel_decel->start_accel_v + accel_decel->effective_accel * accel_decel->accel_offset_t;
+    if (accel_decel->accel_t > EPSILON)
+        start_v = scurve_velocity(&s_acc, 0.);
+    else if (accel_decel->cruise_t > EPSILON)
+        start_v = accel_decel->cruise_v;
     else
-        start_v = move->cruise_v - accel_decel->effective_decel * accel_decel->decel_offset_t;
-    if (accel_decel->decel_t || accel_decel->cruise_t)
-        end_v = move->cruise_v - accel_decel->effective_decel * (accel_decel->decel_offset_t + accel_decel->decel_t);
+        start_v = scurve_velocity(&s_dec, 0.);
+    if (accel_decel->decel_t > EPSILON)
+        end_v = scurve_velocity(&s_dec, accel_decel->decel_t);
+    else if (accel_decel->cruise_t > EPSILON)
+        end_v = accel_decel->cruise_v;
     else
-        end_v = start_v + accel_decel->effective_accel * accel_decel->accel_t;
-    // errorf("Move ms_v=%.3f, mc_v=%.3f, me_v=%.3f with"
-    //        " move_d=%.6f, max_c_v2=%.3f, jct_v2=%.3f, accel=%.3f, decel=%.3f"
-    //        ", accel_t=%.3f, cruise_t=%.3f, decel_t=%.3f"
-    //        , start_v, move->cruise_v, end_v, move->move_d
-    //        , move->max_cruise_v2, move->junction_max_v2
-    //        , accel_decel->effective_accel, accel_decel->effective_decel
-    //        , accel_decel->accel_t, accel_decel->cruise_t, accel_decel->decel_t);
+        end_v = scurve_velocity(&s_acc, accel_decel->accel_t);
+    #if MOVE_DEBUG
+    static volatile long long move_idx = 0;
+    errorf("Move [%lld] ms_v2=%.3f, mc_v2=%.3f, me_v2=%.3f with"
+            " move_d=%.6f, max_c_v2=%.3f, jct_v2=%.3f, accel=%.3f, decel=%.3f"
+            ", accel_t=%.6f, cruise_t=%.6f, decel_t=%.6f", move_idx
+            , start_v*start_v, move->cruise_v*move->cruise_v, end_v*end_v
+            , move->move_d, move->max_cruise_v2, move->junction_max_v2
+            , accel_decel->effective_accel, accel_decel->effective_decel
+            , accel_decel->accel_t, accel_decel->cruise_t, accel_decel->decel_t);
+    ++move_idx;
+    #endif
     if (accel_decel->cruise_t < -EPSILON) {
         errorf("Logic error: impossible move ms_v=%.3f, mc_v=%.3f"
                 ", me_v=%.3f, accel_d = %.3f, decel_d = %.3f"

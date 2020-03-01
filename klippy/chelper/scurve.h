@@ -18,6 +18,18 @@ scurve_eval(struct scurve *s, double time)
     return v * time;
 }
 
+static inline double
+scurve_velocity(struct scurve *s, double time)
+{
+    double v = 6. * s->c6;
+    v = 5. * s->c5 + v * time;
+    v = 4. * s->c4 + v * time;
+    v = 3. * s->c3 + v * time;
+    v = 2. * s->c2 + v * time;
+    v = s->c1 + v * time;
+    return v;
+}
+
 void scurve_fill(struct scurve *s, int accel_order
         , double accel_t, double accel_offset_t, double total_accel_t
         , double start_accel_v, double effective_accel, double accel_comp);

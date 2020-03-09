@@ -10,7 +10,6 @@
 #include "compiler.h" // MIN
 #include "list.h"
 #include "moveq.h" // qmove
-#include "pyhelper.h" // errorf
 #include "scurve.h" // scurve_get_time
 #include "trapbuild.h"
 
@@ -139,7 +138,8 @@ set_trap_decel(struct qmove *decel_head, struct list_head *trapezoid
         set_accel(&m->decel_group, cruise_v2, /*time_offset_from_start=*/0);
         m = m->decel_group.start_accel->move;
         cruise_v2 = MIN(cruise_v2, m->decel_group.max_start_v2);
-        *end_v2 = m->decel_group.max_start_v2;
+        if (end_v2 != NULL)
+            *end_v2 = m->decel_group.max_start_v2;
         m = list_next_entry(m, node);
     }
 }
@@ -163,7 +163,7 @@ vtrap_flush(struct vtrap *vt, struct list_node *next_pos, double *end_v2)
     double peak_cruise_v2 = calc_trap_peak_v2(vt->accel_head, vt->decel_head);
     if (vt->decel_head)
         set_trap_decel(vt->decel_head, &vt->trapezoid, peak_cruise_v2, end_v2);
-    else
+    else if (end_v2 != NULL)
         *end_v2 = peak_cruise_v2;
     if (vt->accel_head)
         set_trap_accel(vt->accel_head, &vt->trapezoid, peak_cruise_v2);
@@ -173,6 +173,11 @@ vtrap_flush(struct vtrap *vt, struct list_node *next_pos, double *end_v2)
 void
 vtrap_add_as_accel(struct vtrap *vt, struct qmove *move)
 {
+    if (vt->accel_head) {
+        struct qmove *prev_move =
+            list_last_entry(&vt->trapezoid, struct qmove, node);
+        prev_move->accel_group.next_accel = &move->accel_group;
+    }
     list_del(&move->node);
     list_add_tail(&move->node, &vt->trapezoid);
     vt->accel_head = move;
@@ -181,6 +186,11 @@ vtrap_add_as_accel(struct vtrap *vt, struct qmove *move)
 void
 vtrap_add_as_decel(struct vtrap *vt, struct qmove *move)
 {
+    if (vt->decel_head) {
+        struct qmove *next_move =
+            list_last_entry(&vt->trapezoid, struct qmove, node);
+        move->decel_group.next_accel = &next_move->decel_group;
+    }
     if (!vt->decel_head)
         vt->decel_head = move;
     if (vt->accel_head != move) {
@@ -203,6 +213,7 @@ vtrap_clear(struct vtrap *vt, struct list_node *next_pos)
 {
     struct qmove *move = NULL, *next = NULL, *prev = NULL;
     list_for_each_entry_safe(move, next, &vt->trapezoid, node) {
+        move->accel_group.next_accel = move->decel_group.next_accel = NULL;
         list_del(&move->node);
         list_add_before(&move->node, next_pos);
         prev = move;

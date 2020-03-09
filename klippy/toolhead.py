@@ -115,22 +115,27 @@ class MoveQueue:
     def flush(self, lazy=False):
         self.junction_flush = LOOKAHEAD_FLUSH_TIME
         queue = self.queue
+        qsize = len(queue)
+        start_moveq_plan = self.toolhead.reactor.monotonic()
         flush_count = self.moveq_plan(self.cqueue, lazy)
+        end_moveq_plan = self.toolhead.reactor.monotonic()
         if flush_count < 0:
             raise error('Internal error in moveq_plan')
-        if flush_count:
-            # Generate step times for all moves ready to be flushed
-            start_process_moves = self.toolhead.reactor.monotonic()
-            self.toolhead._process_moves(queue[:flush_count])
-            end_process_moves = self.toolhead.reactor.monotonic()
-            # Remove processed moves from the queue
-            del queue[:flush_count]
-            next_step_gen_time = self.toolhead.reactor.monotonic()
-            logging.info('moveq_flush: time between step gen = %.6f,'
-                         ' process_moves time = %.6f',
-                         next_step_gen_time - self.last_step_gen_time,
-                         end_process_moves - start_process_moves)
-            self.last_step_gen_time = next_step_gen_time
+        elif not flush_count:
+            return
+        logging.info("lazy = %s, qsize = %d, flush_count = %d, plan_time = %.6f"
+                , lazy, qsize, flush_count, end_moveq_plan - start_moveq_plan);
+        # Generate step times for all moves ready to be flushed
+        start_process_moves = self.toolhead.reactor.monotonic()
+        self.toolhead._process_moves(queue[:flush_count])
+        end_process_moves = self.toolhead.reactor.monotonic()
+        # Remove processed moves from the queue
+        del queue[:flush_count]
+        logging.info('moveq_flush: time between step gen = %.6f,'
+                     ' process_moves time = %.6f',
+                     end_process_moves - self.last_step_gen_time,
+                     end_process_moves - start_process_moves)
+        self.last_step_gen_time = self.toolhead.reactor.monotonic()
     def get_next_accel_decel(self, ctrap_accel_decel):
         total_move_t = self.moveq_getmove(self.cqueue, ctrap_accel_decel)
         if total_move_t < 0:

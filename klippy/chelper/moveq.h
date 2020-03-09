@@ -16,8 +16,7 @@ struct qmove {
     double cruise_v;
     double move_d;
 
-    struct accel_group accel_group, decel_group, default_accel;
-    struct accel_group safe_decel;
+    struct accel_group accel_group, decel_group, fallback_decel, default_accel;
     double smooth_delta_v2, max_smoothed_v2;
     double max_cruise_v2, junction_max_v2;
 

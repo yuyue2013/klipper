@@ -99,6 +99,8 @@ inline double
 calc_min_accel_time(const struct accel_group *ag, double cruise_v)
 {
     double delta_v = cruise_v - ag->start_accel->max_start_v;
+    if (fabs(delta_v) < 0.000000001)
+        return 0.;
     double min_accel_time = delta_v / ag->max_accel;
     if (likely(ag->accel_order > 2)) {
         double accel_t = sqrt(6. * delta_v / ag->max_jerk);
@@ -124,29 +126,21 @@ calc_min_accel_dist(const struct accel_group *ag, double cruise_v)
 }
 
 inline double
-calc_min_safe_dist(const struct accel_group *ag, double cruise_v2)
-{
-    double min_dist = cruise_v2 / (2.0 * ag->max_accel);
-    if (likely(ag->accel_order > 2)) {
-        // It is possible to decelerate from cruise_v2 to any other velocity
-        // in range [0; cruise_v2]. If deceleration distance is smaller than
-        // this, some velocities in that range are prohibited for deceleration.
-        double d = sqrt((16. / 9.) * pow(cruise_v2, 1.5) / ag->max_jerk);
-        min_dist = MAX(min_dist, d);
-    }
-    return min_dist;
-}
-
-inline double
 calc_max_safe_v2(const struct accel_group *ag)
 {
     double dist = ag->combined_d;
-    double max_v2 = 2. * ag->max_accel * dist;
+    double start_v2 = ag->start_accel->max_start_v2;
+    double max_v2 = 2. * ag->max_accel * dist + start_v2;
     if (likely(ag->accel_order > 2)) {
         // It is possible to accelerate from any velocity to this one over the
-        // accumulated distance.
-       double v2 = pow((9./16.) * dist * dist * ag->max_jerk, (2./3.));
-       max_v2 = MIN(max_v2, v2);
+        // accumulated distance dist.
+        double v2 = pow((9./16.) * dist * dist * ag->max_jerk, (2./3.));
+        // Such min v2 is achieved when accelerating from v2 / 9 velocity.
+        // But if start_v2 is smaller than v2 / 9, it is sufficient to
+        // consider the worst-case acceleration from start_v2 only.
+        if (unlikely(start_v2 * 9. < v2))
+            v2 = calc_max_v2(ag);
+        max_v2 = MIN(max_v2, v2);
     }
     return max_v2;
 }

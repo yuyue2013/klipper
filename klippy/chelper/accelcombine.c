@@ -7,7 +7,6 @@
 #include <assert.h> // assert
 #include <math.h> // sqrt
 #include <stddef.h> // offsetof
-#include <stdlib.h> // malloc
 #include <string.h> // memset
 #include "accelcombine.h"
 #include "accelgroup.h"
@@ -16,16 +15,6 @@
 
 static const double EPSILON = 0.000000001;
 
-struct junction_point {
-    struct list_node node;
-    // Combined acceleration limits that must be respected
-    // from this junction point
-    struct accel_group accel;
-    struct accel_group *move_ag;
-    double min_start_time, min_end_time;
-    double max_cruise_end_v2;
-};
-
 void
 reset_junctions(struct accel_combiner *ac, double start_v2)
 {
@@ -33,17 +22,16 @@ reset_junctions(struct accel_combiner *ac, double start_v2)
         struct junction_point *jp = list_first_entry(
                 &ac->junctions, struct junction_point, node);
         list_del(&jp->node);
-        free(jp);
     }
     ac->junct_start_v2 = start_v2;
     ac->prev_best_jp = NULL;
 }
 
-struct junction_point *
-create_junction_point(struct accel_combiner *ac, struct accel_group *ag
-                      , double junction_max_v2)
+static struct junction_point *
+init_junction_point(struct accel_combiner *ac, struct qmove *move
+                    , struct accel_group *ag, double junction_max_v2)
 {
-    struct junction_point *new_jp = malloc(sizeof(*new_jp));
+    struct junction_point *new_jp = &move->jp;
     memset(new_jp, 0, sizeof(*new_jp));
     new_jp->accel = *ag;
     new_jp->accel.start_accel = &new_jp->accel;
@@ -85,7 +73,6 @@ drop_decelerating_jps(struct accel_combiner *ac, double accel_limit_v2)
             return;
         // This point must decelerate
         list_del(&last_jp->node);
-        free(last_jp);
     }
 }
 
@@ -117,13 +104,14 @@ calc_min_accel_end_time(struct junction_point *jp, double cruise_v2)
 }
 
 static struct junction_point *
-calc_best_jp(struct accel_combiner *ac, struct accel_group *new_ag)
+calc_best_jp(struct accel_combiner *ac, struct qmove *move
+             , struct accel_group *new_ag)
 {
-    double max_cruise_v2 = new_ag->move->max_cruise_v2;
+    double max_cruise_v2 = move->max_cruise_v2;
     struct junction_point *jp = NULL, *best_jp = NULL;
     list_for_each_entry(jp, &ac->junctions, node) {
         // Choose the best acceleration option
-        jp->accel.combined_d += new_ag->move->move_d;
+        jp->accel.combined_d += move->move_d;
         jp->accel.max_end_v2 = calc_max_v2(&jp->accel);
         jp->max_cruise_end_v2 = max_cruise_v2;
         jp->min_end_time = calc_min_accel_end_time(
@@ -136,11 +124,11 @@ calc_best_jp(struct accel_combiner *ac, struct accel_group *new_ag)
 }
 
 void
-process_next_accel(struct accel_combiner *ac, struct accel_group *ag
-                   , double junction_max_v2)
+process_next_accel(struct accel_combiner *ac, struct qmove *move
+                   , struct accel_group *ag, double junction_max_v2)
 {
-    struct junction_point *new_jp = create_junction_point(
-            ac, ag, junction_max_v2);
+    struct junction_point *new_jp = init_junction_point(
+            ac, move, ag, junction_max_v2);
     double start_v2 = new_jp->accel.max_start_v2;
     if (unlikely(!check_can_combine(ac, ag)))
         reset_junctions(ac, start_v2);
@@ -150,7 +138,7 @@ process_next_accel(struct accel_combiner *ac, struct accel_group *ag
 
     // Add the current move to the list (with combined_d == 0)
     list_add_tail(&new_jp->node, &ac->junctions);
-    struct junction_point *best_jp = calc_best_jp(ac, ag);
+    struct junction_point *best_jp = calc_best_jp(ac, move, ag);
     ac->prev_best_jp = best_jp;
 
     limit_accel(ag, best_jp->accel.max_accel, best_jp->accel.max_jerk);
@@ -176,7 +164,7 @@ maybe_add_new_fallback_decel_jp(struct accel_combiner *ac, struct qmove *move
             // Last junction point already covers this next_junction_max_v2
             return;
     }
-    struct junction_point *new_jp = malloc(sizeof(*new_jp));
+    struct junction_point *new_jp = &move->jp;
     memset(new_jp, 0, sizeof(*new_jp));
     new_jp->accel = move->default_accel;
     new_jp->accel.start_accel = &new_jp->accel;

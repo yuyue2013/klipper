@@ -150,7 +150,7 @@ backward_pass(struct moveq *mq, struct qmove *end)
         move->decel_group = move->accel_group = move->default_accel;
 
         struct accel_group *decel = &move->decel_group;
-        process_next_accel(&mq->accel_combiner, decel, junction_max_v2);
+        process_next_accel(&mq->accel_combiner, move, decel, junction_max_v2);
         junction_max_v2 = move->junction_max_v2;
     }
 }
@@ -219,7 +219,7 @@ forward_pass(struct moveq *mq, struct qmove *end, int lazy)
         struct accel_group *accel = &move->accel_group;
         struct accel_group *decel = &move->decel_group;
 
-        process_next_accel(&mq->accel_combiner, accel
+        process_next_accel(&mq->accel_combiner, move, accel
                 , MIN(move->junction_max_v2, prev_cruise_v2));
         int can_accelerate = decel->max_end_v2 > accel->max_start_v2 + EPSILON;
         if (can_accelerate) {

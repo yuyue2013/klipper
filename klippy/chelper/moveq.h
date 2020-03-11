@@ -21,6 +21,8 @@ struct qmove {
     double smooth_delta_v2, max_smoothed_v2;
     double max_cruise_v2, junction_max_v2;
 
+    struct junction_point jp;
+
     // Only used to track smootheness, can be deleted
     double start_v, end_v;
 };

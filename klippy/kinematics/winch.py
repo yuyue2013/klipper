@@ -24,9 +24,9 @@ class WinchKinematics:
             toolhead.register_step_generator(s.generate_steps)
         # Setup stepper max halt velocity
         max_velocity, max_accel = toolhead.get_max_velocity()
-        max_halt_velocity = toolhead.get_max_axis_halt()
+        max_halt_velocity, max_halt_accel = toolhead.get_max_axis_halt()
         for s in self.steppers:
-            s.set_max_jerk(max_halt_velocity, max_accel)
+            s.set_max_jerk(max_halt_velocity, max_halt_accel)
         # Setup boundary checks
         self.set_position([0., 0., 0.], ())
     def get_steppers(self):

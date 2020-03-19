@@ -28,12 +28,12 @@ class CartKinematics:
         self.max_z_accel = config.getfloat(
             'max_z_accel', max_accel, above=0., maxval=max_accel)
         self.limits = [(1.0, -1.0)] * 3
-        # Setup stepper max halt velocity
-        max_halt_velocity = toolhead.get_max_axis_halt()
-        self.rails[0].set_max_jerk(max_halt_velocity, max_accel)
-        self.rails[1].set_max_jerk(max_halt_velocity, max_accel)
+        # Setup stepper max halt velocity and accel
+        max_halt_velocity, max_halt_accel = toolhead.get_max_axis_halt()
+        self.rails[0].set_max_jerk(max_halt_velocity, max_halt_accel)
+        self.rails[1].set_max_jerk(max_halt_velocity, max_halt_accel)
         self.rails[2].set_max_jerk(
-            min(max_halt_velocity, self.max_z_velocity), max_accel)
+            min(max_halt_velocity, self.max_z_velocity), self.max_z_accel)
         # Check for dual carriage support
         if config.has_section('dual_carriage'):
             dc_config = config.getsection('dual_carriage')

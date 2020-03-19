@@ -33,10 +33,10 @@ class PolarKinematics:
         self.limit_z = [(1.0, -1.0)]
         self.limit_xy2 = -1.
         # Setup stepper max halt velocity
-        max_halt_velocity = toolhead.get_max_axis_halt()
-        stepper_bed.set_max_jerk(max_halt_velocity, max_accel)
-        rail_arm.set_max_jerk(max_halt_velocity, max_accel)
-        rail_z.set_max_jerk(max_halt_velocity, max_accel)
+        max_halt_velocity, max_halt_accel = toolhead.get_max_axis_halt()
+        stepper_bed.set_max_jerk(max_halt_velocity, max_halt_accel)
+        rail_arm.set_max_jerk(max_halt_velocity, max_halt_accel)
+        rail_z.set_max_jerk(max_halt_velocity, max_halt_accel)
     def get_steppers(self):
         return list(self.steppers)
     def calc_tag_position(self):

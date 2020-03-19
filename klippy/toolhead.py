@@ -527,11 +527,16 @@ class ToolHead:
     def get_max_velocity(self):
         return self.max_velocity, self.max_accel
     def get_max_axis_halt(self):
-        # Determine the maximum velocity a cartesian axis could halt
-        # at due to the junction_deviation setting.  The 8.0 was
-        # determined experimentally.
-        return min(self.max_velocity,
-                   math.sqrt(8. * self.junction_deviation * self.max_accel))
+        # Determine the maximum velocity and acceleration a cartesian axis
+        # could halt at due to the junction_deviation setting. The 8.0 was
+        # determined experimentally. When acceleraion compensation is enabled,
+        # the stepper acceleraion at the ends of the move can be 10x of the
+        # configured max_accel (for more info refer to max_accel_comp function
+        # in chelper/scurve.c).
+        max_halt_velocity = min(self.max_velocity
+                , math.sqrt(8. * self.junction_deviation * self.max_accel))
+        max_halt_accel = 10. * self.max_accel
+        return max_halt_velocity, max_halt_accel
     def _calc_junction_deviation(self):
         scv2 = self.square_corner_velocity**2
         self.junction_deviation = scv2 * (math.sqrt(2.) - 1.) / self.max_accel

@@ -18,6 +18,8 @@ max_accel_comp(double accel_comp, double accel_t)
     // 0.159 is a magic number - a solution of optimization problem for AO=6:
     // maximum compensation value such that velocity >= 0 for any accel_t. It is
     // slightly smaller than 1/6 - a solution of the same problem for AO=4.
+    // This max value of accel_comp also limits max acceleration; in AO=6 case:
+    // max accel = 60 * accel * accel_comp / accel_t^2 <= 10 * a.
     return fmin(accel_comp, accel_t * accel_t * 0.159);
 }
 

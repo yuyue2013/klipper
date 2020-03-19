@@ -56,12 +56,12 @@ class MCU_stepper:
         # Calculate the time it takes to travel a distance with constant accel
         time_offset = start_velocity / accel
         return math.sqrt(2. * dist / accel + time_offset**2) - time_offset
-    def set_max_jerk(self, max_halt_velocity, max_accel):
+    def set_max_jerk(self, max_halt_velocity, max_halt_accel):
         # Calculate the firmware's maximum halt interval time
-        last_step_time = self._dist_to_time(self._step_dist,
-                                            max_halt_velocity, max_accel)
-        second_last_step_time = self._dist_to_time(2. * self._step_dist,
-                                                   max_halt_velocity, max_accel)
+        last_step_time = self._dist_to_time(
+                self._step_dist, max_halt_velocity, max_halt_accel)
+        second_last_step_time = self._dist_to_time(
+                2. * self._step_dist, max_halt_velocity, max_halt_accel)
         self._min_stop_interval = second_last_step_time - last_step_time
     def setup_itersolve(self, alloc_func, *params):
         ffi_main, ffi_lib = chelper.get_ffi()
@@ -290,9 +290,9 @@ class PrinterRail:
     def set_trapq(self, trapq):
         for stepper in self.steppers:
             stepper.set_trapq(trapq)
-    def set_max_jerk(self, max_halt_velocity, max_accel):
+    def set_max_jerk(self, max_halt_velocity, max_halt_accel):
         for stepper in self.steppers:
-            stepper.set_max_jerk(max_halt_velocity, max_accel)
+            stepper.set_max_jerk(max_halt_velocity, max_halt_accel)
     def set_position(self, coord):
         for stepper in self.steppers:
             stepper.set_position(coord)

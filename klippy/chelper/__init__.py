@@ -63,27 +63,36 @@ defs_itersolve = """
 """
 
 defs_moveq = """
+    struct move_accel_decel {
+        double accel_t, accel_offset_t, total_accel_t;
+        double cruise_t;
+        double decel_t, decel_offset_t, total_decel_t;
+        double start_accel_v, cruise_v;
+        double effective_accel, effective_decel;
+        int accel_order;
+    };
+    struct move_accel_decel *move_accel_decel_alloc(void);
+
     struct moveq *moveq_alloc(void);
     void moveq_reset(struct moveq *mq);
     int moveq_add(struct moveq *mq, double move_d
-        , double junction_max_v2, double velocity
+        , double junction_max_v2, double max_cruise_v2
         , int accel_order, double accel, double smoothed_accel
         , double jerk, double min_jerk_limit_time);
     int moveq_plan(struct moveq *mq, int lazy);
-    double moveq_getmove(struct moveq *mq
-        , struct trap_accel_decel *accel_decel);
+    int moveq_getmove(struct moveq *mq
+        , struct move_accel_decel *accel_decel);
 """
 
 defs_trapq = """
-    struct trap_accel_decel *accel_decel_alloc(void);
-    void accel_decel_fill(struct trap_accel_decel *accel_decel
-        , double accel_t, double cruise_t, double decel_t
-        , double start_v, double cruise_v
-        , double accel, int accel_order);
-    void trapq_append(struct trapq *tq, double print_time
+    void trapq_append(struct trapq *tq, double print_time, int accel_order
+        , double accel_t, double accel_offset_t, double total_accel_t
+        , double cruise_t
+        , double decel_t, double decel_offset_t, double total_decel_t
         , double start_pos_x, double start_pos_y, double start_pos_z
         , double axes_r_x, double axes_r_y, double axes_r_z
-        , const struct trap_accel_decel *accel_decel);
+        , double start_accel_v, double cruise_v
+        , double effective_accel, double effective_decel);
     struct trapq *trapq_alloc(void);
     void trapq_free(struct trapq *tq);
     void trapq_free_moves(struct trapq *tq, double print_time);

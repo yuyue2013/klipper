@@ -41,6 +41,16 @@ moveq_alloc(void)
     return mq;
 }
 
+// Allocate a new 'move_accel_decel' object
+struct move_accel_decel * __visible
+move_accel_decel_alloc(void)
+{
+    struct move_accel_decel *accel_decel = malloc(sizeof(*accel_decel));
+    memset(accel_decel, 0, sizeof(*accel_decel));
+    return accel_decel;
+}
+
+
 void __visible
 moveq_reset(struct moveq *mq)
 {
@@ -267,7 +277,7 @@ forward_pass(struct moveq *mq, struct qmove *end, int lazy)
 
 int __visible
 moveq_add(struct moveq *mq, double move_d
-          , double junction_max_v2, double velocity
+          , double junction_max_v2, double max_cruise_v2
           , int accel_order, double accel, double smoothed_accel
           , double jerk, double min_jerk_limit_time)
 {
@@ -275,7 +285,7 @@ moveq_add(struct moveq *mq, double move_d
     m->move_d = move_d;
     fill_accel_group(&m->default_accel, m, accel_order, accel, jerk
             , min_jerk_limit_time);
-    m->max_cruise_v2 = velocity * velocity;
+    m->max_cruise_v2 = max_cruise_v2;
     m->junction_max_v2 = junction_max_v2;
     m->smooth_delta_v2 = 2. * smoothed_accel * move_d;
 
@@ -291,8 +301,8 @@ moveq_add(struct moveq *mq, double move_d
     return 0;
 }
 
-double __visible
-moveq_getmove(struct moveq *mq, struct trap_accel_decel *accel_decel)
+int __visible
+moveq_getmove(struct moveq *mq, struct move_accel_decel *accel_decel)
 {
     memset(accel_decel, 0, sizeof(*accel_decel));
     if (list_empty(&mq->moves)) {
@@ -371,7 +381,7 @@ moveq_getmove(struct moveq *mq, struct trap_accel_decel *accel_decel)
     list_del(&move->node);
     free(move);
     mq->prev_move_end_v = end_v;
-    return accel_decel->accel_t + accel_decel->cruise_t + accel_decel->decel_t;
+    return 0;
 }
 
 int __visible

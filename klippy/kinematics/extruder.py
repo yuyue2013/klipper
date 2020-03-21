@@ -131,16 +131,20 @@ class PrinterExtruder:
         if diff_r:
             return (self.instant_corner_v / abs(diff_r))**2
         return move.max_cruise_v2
-    def move(self, print_time, move, ctrap_accel_decel):
+    def move(self, print_time, move):
         axis_r = move.axes_r[3]
         pressure_advance = 0.
         if axis_r > 0. and (move.axes_d[0] or move.axes_d[1]):
             pressure_advance = self.pressure_advance
         # Queue movement (x is extruder movement, y is pressure advance)
-        self.trapq_append(self.trapq, print_time,
+        self.trapq_append(self.trapq, print_time, move.accel_order,
+                          move.accel_t, move.accel_offset_t, move.total_accel_t,
+                          move.cruise_t,
+                          move.decel_t, move.decel_offset_t, move.total_decel_t,
                           move.start_pos[3], 0., 0.,
                           axis_r, pressure_advance, 0.,
-                          ctrap_accel_decel)
+                          move.start_accel_v, move.cruise_v,
+                          move.effective_accel, move.effective_decel)
     def cmd_M104(self, params, wait=False):
         # Set Extruder Temperature
         gcode = self.printer.lookup_object('gcode')

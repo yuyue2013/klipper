@@ -6,8 +6,6 @@
 #include "itersolve.h"
 #include "list.h"
 
-#define ERROR_RET -1
-
 struct trap_accel_decel;
 
 struct qmove {
@@ -26,6 +24,15 @@ struct qmove {
     double start_v, end_v;
 };
 
+struct move_accel_decel {
+    double accel_t, accel_offset_t, total_accel_t;
+    double cruise_t;
+    double decel_t, decel_offset_t, total_decel_t;
+    double start_accel_v, cruise_v;
+    double effective_accel, effective_decel;
+    int accel_order;
+};
+
 struct moveq {
     double prev_end_v2;
     struct list_head moves;
@@ -34,14 +41,16 @@ struct moveq {
     double prev_move_end_v;
 };
 
+struct move_accel_decel *move_accel_decel_alloc(void);
+
 struct moveq *moveq_alloc(void);
 void moveq_reset(struct moveq *mq);
 
 int moveq_add(struct moveq *mq, double move_d
-              , double junction_max_v2, double velocity
+              , double junction_max_v2, double max_cruise_v2
               , int accel_order, double accel, double smoothed_accel
               , double jerk, double min_jerk_limit_time);
 int moveq_plan(struct moveq *mq, int lazy);
-double moveq_getmove(struct moveq *mq, struct trap_accel_decel *accel_decel);
+int moveq_getmove(struct moveq *mq, struct move_accel_decel *accel_decel);
 
 #endif  // moveq.h

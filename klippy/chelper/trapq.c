@@ -20,78 +20,50 @@ move_alloc(void)
     return m;
 }
 
-// Allocate a new 'trap_accel_decel' object
-struct trap_accel_decel * __visible
-accel_decel_alloc(void)
-{
-    struct trap_accel_decel *accel_decel = malloc(sizeof(*accel_decel));
-    memset(accel_decel, 0, sizeof(*accel_decel));
-    return accel_decel;
-}
-
-// Fill trap_accel_decel with a simple (non-combined) velocity trapezoid
-void __visible
-accel_decel_fill(struct trap_accel_decel *accel_decel
-                 , double accel_t, double cruise_t, double decel_t
-                 , double start_v, double cruise_v
-                 , double accel, int accel_order)
-{
-    memset(accel_decel, 0, sizeof(*accel_decel));
-    accel_decel->accel_order = accel_order;
-    accel_decel->accel_t = accel_t;
-    accel_decel->total_accel_t = accel_t;
-    accel_decel->cruise_t = cruise_t;
-    accel_decel->decel_t = decel_t;
-    accel_decel->total_decel_t = decel_t;
-    accel_decel->start_accel_v = start_v;
-    accel_decel->cruise_v = cruise_v;
-    accel_decel->effective_accel = accel_decel->effective_decel = accel;
-}
-
 // Fill and add a move to the trapezoid velocity queue
 void __visible
-trapq_append(struct trapq *tq, double print_time
+trapq_append(struct trapq *tq, double print_time, int accel_order
+             , double accel_t, double accel_offset_t, double total_accel_t
+             , double cruise_t
+             , double decel_t, double decel_offset_t, double total_decel_t
              , double start_pos_x, double start_pos_y, double start_pos_z
              , double axes_r_x, double axes_r_y, double axes_r_z
-             , const struct trap_accel_decel *accel_decel)
+             , double start_accel_v, double cruise_v
+             , double effective_accel, double effective_decel)
 {
     struct coord start_pos = { .x=start_pos_x, .y=start_pos_y, .z=start_pos_z };
     struct coord axes_r = { .x=axes_r_x, .y=axes_r_y, .z=axes_r_z };
-    if (accel_decel->accel_t) {
+    if (accel_t) {
         struct move *m = move_alloc();
         m->print_time = print_time;
-        m->move_t = accel_decel->accel_t;
-        scurve_fill(&m->s, accel_decel->accel_order, accel_decel->accel_t,
-                accel_decel->accel_offset_t, accel_decel->total_accel_t,
-                accel_decel->start_accel_v, accel_decel->effective_accel);
+        m->move_t = accel_t;
+        scurve_fill(&m->s, accel_order, accel_t, accel_offset_t, total_accel_t,
+                start_accel_v, effective_accel);
         m->start_pos = start_pos;
         m->axes_r = axes_r;
         trapq_add_move(tq, m);
 
-        print_time += accel_decel->accel_t;
-        start_pos = move_get_coord(m, accel_decel->accel_t);
+        print_time += accel_t;
+        start_pos = move_get_coord(m, accel_t);
     }
-    if (accel_decel->cruise_t) {
+    if (cruise_t) {
         struct move *m = move_alloc();
         m->print_time = print_time;
-        m->move_t = accel_decel->cruise_t;
-        scurve_fill(&m->s, 2,
-                accel_decel->cruise_t, 0., accel_decel->cruise_t,
-                accel_decel->cruise_v, 0.);
+        m->move_t = cruise_t;
+        scurve_fill(&m->s, 2, cruise_t, 0., cruise_t, cruise_v, 0.);
         m->start_pos = start_pos;
         m->axes_r = axes_r;
         trapq_add_move(tq, m);
 
-        print_time += accel_decel->cruise_t;
-        start_pos = move_get_coord(m, accel_decel->cruise_t);
+        print_time += cruise_t;
+        start_pos = move_get_coord(m, cruise_t);
     }
-    if (accel_decel->decel_t) {
+    if (decel_t) {
         struct move *m = move_alloc();
         m->print_time = print_time;
-        m->move_t = accel_decel->decel_t;
-        scurve_fill(&m->s, accel_decel->accel_order, accel_decel->decel_t,
-                accel_decel->decel_offset_t, accel_decel->total_decel_t,
-                accel_decel->cruise_v, -accel_decel->effective_decel);
+        m->move_t = decel_t;
+        scurve_fill(&m->s, accel_order, decel_t, decel_offset_t, total_decel_t,
+                cruise_v, -effective_decel);
         m->start_pos = start_pos;
         m->axes_r = axes_r;
         trapq_add_move(tq, m);

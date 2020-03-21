@@ -25,9 +25,6 @@ class ManualStepper:
         self.next_cmd_time = 0.
         # Setup iterative solver
         ffi_main, ffi_lib = chelper.get_ffi()
-        self.ctrap_accel_decel = ffi_main.gc(
-                ffi_lib.accel_decel_alloc(), ffi_lib.free)
-        self.accel_decel_fill = ffi_lib.accel_decel_fill
         self.trapq = ffi_main.gc(ffi_lib.trapq_alloc(), ffi_lib.trapq_free)
         self.trapq_append = ffi_lib.trapq_append
         self.trapq_free_moves = ffi_lib.trapq_free_moves
@@ -62,20 +59,19 @@ class ManualStepper:
     def do_set_position(self, setpos):
         self.rail.set_position([setpos, 0., 0.])
     def do_move(self, movepos, speed, accel):
-        toolhead = self.printer.lookup_object('toolhead')
         self.sync_print_time()
         cp = self.rail.get_commanded_position()
         dist = movepos - cp
         axis_r, accel_t, cruise_t, cruise_v = force_move.calc_move_time(
             dist, speed, accel)
-        self.accel_decel_fill(self.ctrap_accel_decel,
-                              accel_t, cruise_t, accel_t,
-                              0., cruise_v, accel, toolhead.accel_order)
-        self.trapq_append(self.trapq, self.next_cmd_time,
-                          cp, 0., 0., axis_r, 0., 0., self.ctrap_accel_decel)
+        self.trapq_append(self.trapq, self.next_cmd_time, 2,
+                          accel_t, 0., accel_t, 0., accel_t, 0., accel_t,
+                          cp, 0., 0., axis_r, 0., 0.,
+                          0., cruise_v, accel, accel)
         self.next_cmd_time = self.next_cmd_time + accel_t + cruise_t + accel_t
         self.rail.generate_steps(self.next_cmd_time)
         self.trapq_free_moves(self.trapq, self.next_cmd_time + 99999.9)
+        toolhead = self.printer.lookup_object('toolhead')
         toolhead.note_kinematic_activity(self.next_cmd_time)
         self.sync_print_time()
     def do_homing_move(self, movepos, speed, accel, triggered, check_trigger):

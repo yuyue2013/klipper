@@ -9,8 +9,7 @@
 #include <string.h> // memset
 #include "compiler.h" // __visible
 #include "itersolve.h" // struct stepper_kinematics
-#include "pyhelper.h" // errorf
-#include "scurve.h" // scurve_eval, scurve_integrate
+#include "scurve.h" // scurve_tn_antiderivative
 #include "trapq.h" // move_get_distance
 
 // Without pressure advance, the extruder stepper position is:

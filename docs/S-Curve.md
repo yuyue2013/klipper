@@ -104,9 +104,11 @@ be done on the mainline Klipper branch before switching to the S-Curve branch.
    `printer.cfg` to 7000.
 2. Restart the firmware: `RESTART`.
 3. Disable Pressure Advance: `SET_PRESSURE_ADVANCE ADVANCE=0`.
-4. If you have already switched to the S-Curve branch, execute
-   `SET_SCURVE ACCEL_ORDER=2` and
-   `SET_SMOOTH_AXIS SMOOTH_X=0 SMOOTH_Y=0` commands.
+4. If you have already switched to the S-Curve branch and updated the config,
+   execute `SET_SCURVE ACCEL_ORDER=2` and
+   `SET_SMOOTH_AXIS SMOOTH_X=0 SMOOTH_Y=0` commands. If you get
+   "Unknown command" errors for any of these commands, you can safely ignore
+   them at this point and continue with the measurements.
 5. Execute the command
    `TUNING_TOWER COMMAND=SET_VELOCITY_LIMIT PARAMETER=ACCEL START=1250 FACTOR=100 BAND=5`.
    Basically, we try to make ringing more pronounced by setting different large
@@ -217,7 +219,10 @@ some ringing in your prints after the basic tuning, you may be able to reduce
 it further following the steps outlined below.
 
 Tuning procedure below assumes that you have completed the basic tuning already,
-and have configured the S-Curve mode as described there.
+and have configured the S-Curve mode as described there. Note that it is also
+possible to run fine-tuning from this section, except "Max jerk tuning", if only
+`[smooth_axis]` was enabled, but not `[scurve]`. You can follow the instructions
+below as-is, simply ignoring "Unknown command" errors for `SET_SCURVE` command.
 
 ## Best tuning conditions
 

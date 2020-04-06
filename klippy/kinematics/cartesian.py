@@ -126,7 +126,7 @@ class CartKinematics:
         toolhead.flush_step_generation()
         dc_rail = self.dual_carriage_rails[carriage]
         dc_axis = self.dual_carriage_axis
-        self.rails[dc_axis].set_trapq(None)
+        self.dual_carriage_rails[not carriage].set_trapq(None)
         dc_rail.set_trapq(toolhead.get_trapq())
         self.rails[dc_axis] = dc_rail
         pos = toolhead.get_position()

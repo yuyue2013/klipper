@@ -492,7 +492,7 @@ class ToolHead:
             self.print_time, max(buffer_time, 0.), self.print_stall)
     def check_busy(self, eventtime):
         est_print_time = self.mcu.estimated_print_time(eventtime)
-        lookahead_empty = not self.move_queue.is_empty()
+        lookahead_empty = self.move_queue.is_empty()
         return self.print_time, est_print_time, lookahead_empty
     def get_status(self, eventtime):
         print_time = self.print_time

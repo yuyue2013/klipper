@@ -121,6 +121,7 @@ class DeltaKinematics:
             raise homing.EndstopMoveError(end_pos, "Must home first")
         end_z = end_pos[2]
         limit_xy2 = self.max_xy2
+        z_ratio = move.move_d / abs(move.axes_d[2]) if move.axes_d[2] else 0.
         if end_z > self.limit_z:
             limit_xy2 = min(limit_xy2, (self.max_z - end_z)**2)
         if end_xy2 > limit_xy2 or end_z > self.max_z or end_z < self.min_z:
@@ -130,7 +131,7 @@ class DeltaKinematics:
                 raise homing.EndstopMoveError(end_pos)
             limit_xy2 = -1.
         if move.axes_d[2]:
-            move.limit_speed(self.max_z_velocity, move.accel)
+            move.limit_speed(self.max_z_velocity * z_ratio, move.accel)
             limit_xy2 = -1.
         # Limit the speed/accel of this move if is is at the extreme
         # end of the build envelope
@@ -141,7 +142,7 @@ class DeltaKinematics:
                 r = 0.25
             max_velocity = self.max_velocity
             if move.axes_d[2]:
-                max_velocity = self.max_z_velocity
+                max_velocity = self.max_z_velocity * z_ratio
             move.limit_speed(max_velocity * r, self.max_accel * r)
             limit_xy2 = -1.
         self.limit_xy2 = min(limit_xy2, self.slow_xy2)

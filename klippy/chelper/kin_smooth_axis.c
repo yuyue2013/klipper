@@ -4,6 +4,7 @@
 //
 // This file may be distributed under the terms of the GNU GPLv3 license.
 
+#include <math.h> // sqrt
 #include <stddef.h> // offsetof
 #include <stdlib.h> // malloc
 #include <string.h> // memset
@@ -75,8 +76,10 @@ range_integrate(const struct move *m, int axis, double move_time
 static inline double
 calc_position(const struct move *m, int axis, double move_time
               , const struct smoother *sm
-              , double damping_comp, double accel_comp)
+              , double damping_ratio, double accel_comp)
 {
+    accel_comp *= (1. - damping_ratio * damping_ratio);
+    double damping_comp = 2. * damping_ratio * sqrt(accel_comp);
     double area = range_integrate(m, axis, move_time, sm
                                   , damping_comp, accel_comp);
     return area * sm->inv_norm;
@@ -87,7 +90,7 @@ struct smooth_axis {
     struct stepper_kinematics *orig_sk;
     struct smoother *x_smoother, *y_smoother;
     double x_accel_comp, y_accel_comp;
-    double x_damping_comp, y_damping_comp;
+    double x_damping_ratio, y_damping_ratio;
     struct move m;
 };
 
@@ -102,7 +105,7 @@ smooth_x_calc_position(struct stepper_kinematics *sk, struct move *m
     if (!sa->x_smoother)
         return sa->orig_sk->calc_position_cb(sa->orig_sk, m, move_time);
     sa->m.start_pos.x = calc_position(m, 'x', move_time, sa->x_smoother
-                                      , sa->x_damping_comp, sa->x_accel_comp);
+                                      , sa->x_damping_ratio, sa->x_accel_comp);
     return sa->orig_sk->calc_position_cb(sa->orig_sk, &sa->m, DUMMY_T);
 }
 
@@ -115,7 +118,7 @@ smooth_y_calc_position(struct stepper_kinematics *sk, struct move *m
     if (!sa->y_smoother)
         return sa->orig_sk->calc_position_cb(sa->orig_sk, m, move_time);
     sa->m.start_pos.y = calc_position(m, 'y', move_time, sa->y_smoother
-                                      , sa->y_damping_comp, sa->y_accel_comp);
+                                      , sa->y_damping_ratio, sa->y_accel_comp);
     return sa->orig_sk->calc_position_cb(sa->orig_sk, &sa->m, DUMMY_T);
 }
 
@@ -130,11 +133,11 @@ smooth_xy_calc_position(struct stepper_kinematics *sk, struct move *m
     sa->m.start_pos = move_get_coord(m, move_time);
     if (sa->x_smoother)
         sa->m.start_pos.x = calc_position(m, 'x', move_time, sa->x_smoother
-                                          , sa->x_damping_comp
+                                          , sa->x_damping_ratio
                                           , sa->x_accel_comp);
     if (sa->y_smoother)
         sa->m.start_pos.y = calc_position(m, 'y', move_time, sa->y_smoother
-                                          , sa->y_damping_comp
+                                          , sa->y_damping_ratio
                                           , sa->y_accel_comp);
     return sa->orig_sk->calc_position_cb(sa->orig_sk, &sa->m, DUMMY_T);
 }
@@ -159,12 +162,12 @@ smooth_axis_set_time(struct stepper_kinematics *sk
 }
 
 void __visible
-smooth_axis_set_damping_comp(struct stepper_kinematics *sk
-                             , double damping_comp_x, double damping_comp_y)
+smooth_axis_set_damping_ratio(struct stepper_kinematics *sk
+                             , double damping_ratio_x, double damping_ratio_y)
 {
     struct smooth_axis *sa = container_of(sk, struct smooth_axis, sk);
-    sa->x_damping_comp = damping_comp_x;
-    sa->y_damping_comp = damping_comp_y;
+    sa->x_damping_ratio = damping_ratio_x;
+    sa->y_damping_ratio = damping_ratio_y;
 }
 
 void __visible

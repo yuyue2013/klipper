@@ -11,7 +11,10 @@ SEG_TIME = .000100
 INV_SEG_TIME = 1. / SEG_TIME
 
 SPRING_FREQ=35.0
-DAMPING=30.
+DAMPING_RATIO=0.05
+
+MEASURED_FREQ=40.0
+MEAS_DAMPING_RATIO=0.003
 
 ######################################################################
 # Basic trapezoid motion
@@ -65,8 +68,8 @@ def get_acc_pos_ao6(rel_t, start_v, accel, move_t):
     return (((c6 * rel_t + c5) * rel_t + c4)
             * rel_t * rel_t * rel_t + c1) * rel_t
 
-get_acc_pos = get_acc_pos_ao6
-get_acc = get_accel_jerk_limit
+get_acc_pos = get_acc_pos_ao2
+get_acc = get_accel
 
 # Calculate positions based on 'Moves' list
 def gen_positions():
@@ -92,13 +95,14 @@ def gen_positions():
 
 def estimate_spring(positions):
     ang_freq2 = (SPRING_FREQ * 2. * math.pi)**2
+    damping_factor = 4. * math.pi * DAMPING_RATIO * SPRING_FREQ
     head_pos = head_v = 0.
     out = []
     for stepper_pos in positions:
         head_pos += head_v * SEG_TIME
         head_a = (stepper_pos - head_pos) * ang_freq2
         head_v += head_a * SEG_TIME
-        head_v -= head_v * DAMPING * SEG_TIME
+        head_v -= head_v * damping_factor * SEG_TIME
         out.append(head_pos)
     return out
 
@@ -223,15 +227,94 @@ def calc_spring_double_weighted(positions, smooth_time):
                   + ra * (positions[i+1] - positions[i]))
     return calc_weighted(out, smooth_time=.5 * smooth_time)
 
+def calc_zv_shaper(positions):
+    df = math.sqrt(1. - MEAS_DAMPING_RATIO**2)
+    K = math.exp(-MEAS_DAMPING_RATIO * math.pi / df)
+    inv_D = 1. / (1. + K)
+    t_d = 1. / (MEASURED_FREQ * df)
+    offset = time_to_index(t_d * .25)
+    out = [0.] * len(positions)
+    for i in indexes(positions):
+        out[i] = (positions[i + offset] + positions[i - offset] * K) * inv_D
+    return out
+
+def calc_zvd_shaper(positions):
+    df = math.sqrt(1. - MEAS_DAMPING_RATIO**2)
+    K = math.exp(-MEAS_DAMPING_RATIO * math.pi / df)
+    inv_D = 1. / (1. + 2.*K + K**2)
+    t_d = 1. / (MEASURED_FREQ * df)
+    offset = time_to_index(t_d * .5)
+    out = [0.] * len(positions)
+    for i in indexes(positions):
+        out[i] = (positions[i + offset] + positions[i] * 2.*K
+                + positions[i - offset] * K**2) * inv_D
+    return out
+
+def calc_zvdd_shaper(positions):
+    df = math.sqrt(1. - MEAS_DAMPING_RATIO**2)
+    K = math.exp(-MEAS_DAMPING_RATIO * math.pi / df)
+    inv_D = 1. / (1. + 3.*K + 3.*K**2 + K**3)
+    t_d = 1. / (MEASURED_FREQ * df)
+    offset1 = time_to_index(t_d * .25)
+    offset2 = time_to_index(t_d * .75)
+    out = [0.] * len(positions)
+    for i in indexes(positions):
+        out[i] = inv_D * (positions[i + offset2] + positions[i + offset1] * 3.*K
+                + positions[i - offset1] * 3.*K**2 + positions[i - offset2] * K**3)
+    return out
+
+def calc_ei_shaper(positions):
+    v_tol = 0.05 # vibration tolerance
+    d_r = MEAS_DAMPING_RATIO
+    td = 1. / (MEASURED_FREQ * math.sqrt(1. - d_r**2))
+
+    a2 = 2. * (1. - v_tol) / (1. + v_tol) * math.exp(-math.pi * d_r)
+    a3 = math.exp(-2. * math.pi * d_r)
+    inv_D = 1. / (1. + a2 + a3)
+
+    offset1 = time_to_index(.5 * td)
+    out = [0.] * len(positions)
+    for i in indexes(positions):
+        out[i] = (positions[i + offset1]
+            + a2 * positions[i]
+            + a3 * positions[i - offset1]) * inv_D
+    return out
+
+def calc_2hump_ei_shaper(positions):
+    d_r = MEAS_DAMPING_RATIO
+    td = 1. / (MEASURED_FREQ * math.sqrt(1. - d_r**2))
+    # Coefficients calculated for 5% vibration tolerance
+    t2 = 0.49890 + 0.16270 * d_r - 0.54262 * d_r**2 + 6.16180 * d_r**3
+    t3 = 0.99748 + 0.18382 * d_r - 1.58270 * d_r**2 + 8.17120 * d_r**3
+    t4 = 1.49920 - 0.09297 * d_r - 0.28338 * d_r**2 + 1.85710 * d_r**3
+
+    a1 = 0.16054 + 0.76699 * d_r + 2.26560 * d_r**2 - 1.22750 * d_r**3
+    a2 = 0.33911 + 0.45081 * d_r - 2.58080 * d_r**2 + 1.73650 * d_r**3
+    a3 = 0.34089 - 0.61533 * d_r - 0.68765 * d_r**2 + 0.42261 * d_r**3
+    a4 = 0.15997 - 0.60246 * d_r + 1.00280 * d_r**2 - 0.93145 * d_r**3
+
+    offset1 = time_to_index(-.75 * td)
+    offset2 = time_to_index((t2 - .75) * td)
+    offset3 = time_to_index((t3 - .75) * td)
+    offset4 = time_to_index((t4 - .75) * td)
+    out = [0.] * len(positions)
+    for i in indexes(positions):
+        out[i] = (a1 * positions[i - offset1]
+            + a2 * positions[i - offset2]
+            + a3 * positions[i - offset3]
+            + a4 * positions[i - offset4])
+    return out
+
 # Ideal values
-SPRING_ADVANCE = 1. / ((SPRING_FREQ * 2. * math.pi)**2)
-RESISTANCE_ADVANCE = DAMPING * SPRING_ADVANCE
+SPRING_ADVANCE = 1. / ((MEASURED_FREQ * 2. * math.pi)**2)
+RESISTANCE_ADVANCE = 2. * MEAS_DAMPING_RATIO * math.sqrt(SPRING_ADVANCE)
 SMOOTH_TIME = (2./3.) * 2. * math.pi * math.sqrt(SPRING_ADVANCE)
 
 def gen_updated_position(positions):
     #return calc_weighted(positions, 0.040)
     #return calc_spring_double_weighted(positions, SMOOTH_TIME)
-    return calc_weighted4(calc_spring_raw(positions), SMOOTH_TIME)
+    #return calc_weighted4(calc_spring_raw(positions), SMOOTH_TIME)
+    return calc_ei_shaper(positions)
 
 
 ######################################################################
@@ -264,8 +347,10 @@ def plot_motion():
                head_velocities, head_upd_velocities,
                head_accels, head_upd_accels)
     fig, (ax1, ax2, ax3) = matplotlib.pyplot.subplots(nrows=3, sharex=True)
-    ax1.set_title("Simulation (belt frequency=%.3f, damping=%.3f)"
-                  % (SPRING_FREQ, DAMPING))
+    ax1.set_title("Simulation (belt frequency=%.3f, damping_ratio=%.3f)\n"
+                  "(measured belt frequency=%.3f, damping_ratio = %.3f)"
+                  % (SPRING_FREQ, DAMPING_RATIO, MEASURED_FREQ
+                      , MEAS_DAMPING_RATIO))
     ax1.set_ylabel('Velocity (mm/s)')
     ax1.plot(times, upd_velocities, 'r', label='New Velocity', alpha=0.8)
     ax1.plot(times, velocities, 'g', label='Nominal Velocity', alpha=0.8)

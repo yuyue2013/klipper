@@ -17,12 +17,11 @@ COMPILE_CMD = ("gcc -Wall -g -O2 -shared -fPIC"
 SOURCE_FILES = [
     'pyhelper.c', 'serialqueue.c', 'stepcompress.c', 'itersolve.c', 'trapq.c',
     'kin_cartesian.c', 'kin_corexy.c', 'kin_delta.c', 'kin_polar.c',
-    'kin_rotary_delta.c', 'kin_winch.c', 'kin_extruder.c', 'kin_smooth_axis.c',
-    'integrate.c',
+    'kin_rotary_delta.c', 'kin_winch.c', 'kin_extruder.c', 'kin_shaper.c',
 ]
 DEST_LIB = "c_helper.so"
 OTHER_FILES = [
-    'list.h', 'serialqueue.h', 'stepcompress.h', 'integrate.h', 'itersolve.h',
+    'list.h', 'serialqueue.h', 'stepcompress.h', 'itersolve.h',
     'pyhelper.h', 'trapq.h'
 ]
 
@@ -105,16 +104,22 @@ defs_kin_extruder = """
         , double smooth_time);
 """
 
-defs_kin_smooth_axis = """
-    void smooth_axis_set_time(struct stepper_kinematics *sk
-        , double smooth_x, double smooth_y);
-    void smooth_axis_set_damping_comp(struct stepper_kinematics *sk
-        , double accel_comp_x, double accel_comp_y);
-    void smooth_axis_set_accel_comp(struct stepper_kinematics *sk
-        , double accel_comp_x, double accel_comp_y);
-    int smooth_axis_set_sk(struct stepper_kinematics *sk
+defs_kin_shaper = """
+    enum INPUT_SHAPER_TYPE {
+        INPUT_SHAPER_ZV = 0,
+        INPUT_SHAPER_ZVD = 1,
+        INPUT_SHAPER_ZVDD = 2,
+        INPUT_SHAPER_ZVDDD = 3,
+        INPUT_SHAPER_EI = 4,
+        INPUT_SHAPER_2HUMP_EI = 5,
+    };
+
+    int input_shaper_set_shaper_params(struct stepper_kinematics *sk
+        , double damped_spring_period_x, double damped_spring_period_y
+        , double damping_ratio_x, double damping_ratio_y, int shaper_type);
+    int input_shaper_set_sk(struct stepper_kinematics *sk
         , struct stepper_kinematics *orig_sk);
-    struct stepper_kinematics * smooth_axis_alloc(void);
+    struct stepper_kinematics * input_shaper_alloc(void);
 """
 
 defs_serialqueue = """
@@ -161,7 +166,7 @@ defs_all = [
     defs_stepcompress, defs_itersolve, defs_trapq,
     defs_kin_cartesian, defs_kin_corexy, defs_kin_delta, defs_kin_polar,
     defs_kin_rotary_delta, defs_kin_winch, defs_kin_extruder,
-    defs_kin_smooth_axis,
+    defs_kin_shaper,
 ]
 
 # Return the list of file modification times

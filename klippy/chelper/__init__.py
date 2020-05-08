@@ -115,8 +115,7 @@ defs_kin_shaper = """
     };
 
     int input_shaper_set_shaper_params(struct stepper_kinematics *sk
-        , double damped_spring_period_x, double damped_spring_period_y
-        , double damping_ratio_x, double damping_ratio_y, int shaper_type);
+        , double damped_spring_period, double damping_ratio, int shaper_type);
     int input_shaper_set_sk(struct stepper_kinematics *sk
         , struct stepper_kinematics *orig_sk);
     struct stepper_kinematics * input_shaper_alloc(void);
